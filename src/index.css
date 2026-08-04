@@ -696,8 +696,8 @@ img {
   height: 100%;
   overflow: hidden;
   background:
-    radial-gradient(ellipse 70% 50% at 50% 15%, #7eb88855, transparent),
-    linear-gradient(180deg, #87b090 0%, #3f5c46 45%, #152018 100%);
+    radial-gradient(ellipse 70% 45% at 50% 10%, #5a403055, transparent),
+    linear-gradient(180deg, #2a3038 0%, #1a1e24 40%, #0c1014 100%);
 }
 
 .simfe-stage {
@@ -1044,19 +1044,19 @@ img {
 
 .simfe-minimap i {
   display: block;
-  background: #3a5a40;
+  background: #3a4048;
 }
 
 .simfe-minimap i.path {
-  background: #6a5a40;
+  background: #4a4540;
 }
 
 .simfe-minimap i.cover {
-  background: #5a5040;
+  background: #5a5048;
 }
 
 .simfe-minimap i.block {
-  background: #2a3034;
+  background: #1a1e22;
 }
 
 .simfe-minimap i.ally {

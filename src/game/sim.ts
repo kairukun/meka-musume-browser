@@ -180,12 +180,12 @@ export function tileImage(x: number, y: number, _deploy = false) {
 
 export function tileLabel(x: number, y: number) {
   const t = SIM_MAP[y]?.[x];
-  if (t === 5) return "Building";
-  if (t === 4) return "Rock";
-  if (t === 3) return "Wall";
-  if (t === 2) return "Cover";
-  if (t === 1) return "Path";
-  return "Ground";
+  if (t === 5) return "Ruined Building";
+  if (t === 4) return "Wreckage";
+  if (t === 3) return "Barrier";
+  if (t === 2) return "Rubble Cover";
+  if (t === 1) return "Cracked Street";
+  return "Ash Plaza";
 }
 
 export function unitAt(battle: SimBattle, x: number, y: number) {
