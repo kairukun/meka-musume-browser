@@ -300,6 +300,8 @@ export function calcDamage(
   if (attacker.team === "ally" && attacker.cls === "Assault" && doctrines.includes("breach_net")) {
     mult *= 1.15;
   }
+  // OpFor hits a bit softer — academy sparring, not UN coastal fire
+  if (attacker.team === "enemy") mult *= 0.88;
   let dmg = Math.max(2, Math.round((atk - def * 0.28) * mult * 1.2));
   if (attacker.team === "ally") dmg = Math.max(2, Math.round(dmg * fatigueDrillMult(fatigue)));
   return dmg;

@@ -544,6 +544,18 @@ img {
   min-height: 0;
 }
 
+.briefing-live {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.choice-grid.is-remixing {
+  opacity: 0.72;
+  pointer-events: none;
+}
+
 .briefing-log {
   flex: 1;
   min-height: 180px;
@@ -1077,6 +1089,28 @@ img {
   padding: 8px 12px;
   font-size: 12px;
   color: #c5d4e0;
+  line-height: 1.35;
+}
+
+.simfe-chip.ollama-toggle {
+  top: 56px;
+  right: 12px;
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: #9eb4c8;
+  user-select: none;
+}
+
+.simfe-chip.ollama-err {
+  top: 92px;
+  right: 12px;
+  max-width: min(360px, 42vw);
+  padding: 6px 10px;
+  font-size: 11px;
+  color: #f0c8a0;
   line-height: 1.35;
 }
 

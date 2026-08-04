@@ -14,25 +14,25 @@ export const SIM_LEVELS: SimLevelDef[] = [
     id: "sim_01",
     label: "Sim 01 — Street Sweep",
     blurb: "Clear a ruined block. OpFor is slightly under your rating.",
-    opforOffset: -2,
+    opforOffset: -3,
   },
   {
     id: "sim_02",
     label: "Sim 02 — Crossfire",
-    blurb: "Intersecting lanes. OpFor matches your edge and then some.",
-    opforOffset: 4,
+    blurb: "Intersecting lanes. OpFor near your edge.",
+    opforOffset: 1,
   },
   {
     id: "sim_03",
     label: "Sim 03 — Hold the Block",
-    blurb: "Defense under pressure. Harder OpFor rating.",
-    opforOffset: 9,
+    blurb: "Defense under pressure. Moderately harder OpFor.",
+    opforOffset: 4,
   },
   {
     id: "sim_04",
     label: "Sim 04 — City Core",
-    blurb: "Final academy sim. Peak opposing Combat STR.",
-    opforOffset: 15,
+    blurb: "Final academy sim. Strongest opposing Combat STR.",
+    opforOffset: 8,
   },
 ];
 

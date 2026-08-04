@@ -1,6 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CharacterPortrait } from "../components/CharacterPortrait";
 import { ASSET, CREW, SIGNATURE_LABEL } from "../game/crew";
+import {
+  applyEnemyAction,
+  endEnemyPhase,
+  listEnemyActions,
+} from "../game/enemyAi";
+import { ollamaPickAction, probeOllama } from "../game/ollama";
 import {
   SIM_DEPLOY,
   SIM_H,
@@ -59,14 +65,118 @@ export function SimScreen() {
     return { dmg, target: hoverUnit };
   }, [selected, battle.mode, battle.attackTiles, battle.markedId, hoverUnit, fatigue, doctrines]);
 
+  const [ollamaReady, setOllamaReady] = useState(false);
+  const [ollamaModels, setOllamaModels] = useState<string[]>([]);
+  const [aiThinking, setAiThinking] = useState(false);
+  const [ollamaError, setOllamaError] = useState<string | null>(null);
+  const [retryTick, setRetryTick] = useState(0);
+  const enemyBusy = useRef(false);
+
+  const refreshOllama = async () => {
+    const r = await probeOllama();
+    setOllamaReady(r.ok);
+    setOllamaModels(r.models);
+    return r;
+  };
+
   useEffect(() => {
-    if (battle.phase !== "enemy") return;
-    const t = window.setTimeout(
-      () => setBattle((b) => enemyStep(b, fatigue, doctrines)),
-      320,
-    );
-    return () => window.clearTimeout(t);
-  }, [battle.phase, battle.units, fatigue, doctrines]);
+    let alive = true;
+    refreshOllama().then((r) => {
+      if (!alive) return;
+      setOllamaReady(r.ok);
+      setOllamaModels(r.models);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (battle.phase !== "enemy") {
+      enemyBusy.current = false;
+      setAiThinking(false);
+      setOllamaError(null);
+      return;
+    }
+    if (enemyBusy.current) return;
+    enemyBusy.current = true;
+    let cancelled = false;
+
+    const run = async () => {
+      const snap = battle;
+      const ready = snap.units.filter((u) => u.team === "enemy" && u.hp > 0 && !u.acted);
+      if (!ready.length) {
+        if (!cancelled) {
+          setBattle(endEnemyPhase(snap));
+          enemyBusy.current = false;
+        }
+        return;
+      }
+      const unit = ready[0];
+      const allies = snap.units.filter((u) => u.team === "ally" && u.hp > 0 && u.x != null);
+      if (!allies.length) {
+        if (!cancelled) {
+          setBattle({ ...snap, phase: "lose" });
+          enemyBusy.current = false;
+        }
+        return;
+      }
+
+      let models = ollamaModels;
+      let readyOk = ollamaReady;
+      if (!readyOk || !models.length) {
+        const r = await refreshOllama();
+        readyOk = r.ok;
+        models = r.models;
+      }
+
+      if (!readyOk || !models.length) {
+        if (!cancelled) {
+          setOllamaError("Ollama offline — install/start Ollama, pull a model, then Retry.");
+          setBattle((b) => ({
+            ...b,
+            log: "OpFor waiting on Ollama (localhost:11434)…",
+          }));
+          enemyBusy.current = false;
+        }
+        return;
+      }
+
+      const actions = listEnemyActions(snap, unit, fatigue, doctrines);
+      if (!actions.length) {
+        if (!cancelled) {
+          setBattle(applyEnemyAction(snap, unit.id, { id: -1, x: unit.x!, y: unit.y!, foeId: null, blurb: "Hold" }, fatigue, doctrines));
+          enemyBusy.current = false;
+        }
+        return;
+      }
+
+      setAiThinking(true);
+      setOllamaError(null);
+      let pick = await ollamaPickAction(unit.name, unit.cls, actions, models);
+      if (!pick) pick = await ollamaPickAction(unit.name, unit.cls, actions, models);
+      setAiThinking(false);
+
+      if (cancelled) {
+        enemyBusy.current = false;
+        return;
+      }
+      if (!pick) {
+        setOllamaError("Ollama did not return a valid move. Retry OpFor turn.");
+        setBattle((b) => ({ ...b, log: `${unit.name} stalled — Ollama no reply.` }));
+        enemyBusy.current = false;
+        return;
+      }
+      setBattle(applyEnemyAction(snap, unit.id, pick, fatigue, doctrines));
+      enemyBusy.current = false;
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [battle.phase, battle.units, fatigue, doctrines, ollamaReady, ollamaModels, retryTick]);
+
 
   useEffect(() => {
     if (battle.phase === "win") {
@@ -158,10 +268,33 @@ export function SimScreen() {
           <strong>{phaseLabel}</strong>
           <span>
             Turn {battle.turn} · OpFor STR {opforStr}
+            {aiThinking ? " · Ollama thinking…" : ""}
           </span>
         </div>
 
         <div className="simfe-chip log">{battle.log}</div>
+
+        <div className="simfe-chip ollama-toggle">
+          <span>
+            OpFor: Ollama
+            {ollamaReady ? " · online" : " · offline"}
+          </span>
+          {(ollamaError || !ollamaReady) && (
+            <button
+              type="button"
+              className="btn"
+              style={{ padding: "2px 8px", fontSize: 11 }}
+              onClick={() => {
+                setOllamaError(null);
+                enemyBusy.current = false;
+                void refreshOllama().then(() => setRetryTick((n) => n + 1));
+              }}
+            >
+              Retry
+            </button>
+          )}
+        </div>
+        {ollamaError && <div className="simfe-chip ollama-err">{ollamaError}</div>}
 
         {focus && (
           <div className={`simfe-unitpanel ${focus.team}`}>
@@ -528,58 +661,4 @@ function useSignature(
   u.acted = true;
   b.log = `${SIGNATURE_LABEL[who!]} — ${dmg} dmg.`;
   return finishUnit(trySupport(b, u, doctrines), u);
-}
-
-function enemyStep(
-  battle: SimBattle,
-  fatigue: number,
-  doctrines: import("../game/development").DoctrineId[] = [],
-): SimBattle {
-  const b: SimBattle = { ...battle, units: battle.units.map((u) => ({ ...u })) };
-  const ready = b.units.filter((u) => u.team === "enemy" && u.hp > 0 && !u.acted);
-  if (!ready.length) {
-    return {
-      ...b,
-      phase: "player",
-      turn: b.turn + 1,
-      mode: "select",
-      units: b.units.map((u) => ({ ...u, acted: false })),
-      log: `Your phase — Turn ${b.turn + 1}.`,
-    };
-  }
-  const unit = ready[0];
-  const allies = b.units.filter((u) => u.team === "ally" && u.hp > 0 && u.x != null);
-  if (!allies.length) return { ...b, phase: "lose" };
-  const moves = bfsMove(b, unit);
-  let best: { x: number; y: number; foe: SimUnit | null; score: number } | null = null;
-  for (const [tx, ty] of moves) {
-    let score = -Math.abs(tx - 12) - Math.abs(ty - (2 + ready.indexOf(unit) * 2));
-    let foe: SimUnit | null = null;
-    let bestFs = -999;
-    for (const a of allies) {
-      const d = Math.abs(tx - a.x!) + Math.abs(ty - a.y!);
-      if (d < unit.range[0] || d > unit.range[1]) continue;
-      let fs = calcDamage(unit, a, fatigue, null, false, doctrines) * 3;
-      if (b.tauntId === a.id) fs += 70;
-      if (fs > bestFs) {
-        bestFs = fs;
-        foe = a;
-      }
-    }
-    if (foe) score += 40 + bestFs;
-    if (!best || score > best.score) best = { x: tx, y: ty, foe, score };
-  }
-  if (best) {
-    unit.x = best.x;
-    unit.y = best.y;
-    if (best.foe) {
-      const dmg = calcDamage(unit, best.foe, fatigue, null, false, doctrines);
-      best.foe.hp = Math.max(0, best.foe.hp - dmg);
-      b.log = `${unit.name} hits ${best.foe.name} — ${dmg}.`;
-    } else b.log = `${unit.name} advances.`;
-  }
-  unit.acted = true;
-  const end = checkEnd(b);
-  if (end) return { ...b, phase: end };
-  return b;
 }
