@@ -24,5 +24,6 @@ tmp
 *.sln
 *.sw?
 
-.github/workflows/
+# Keep Actions workflows in repo once workflow OAuth scope is available.
+# Until then, use: npm run deploy
 

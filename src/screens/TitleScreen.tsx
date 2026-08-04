@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { ASSET } from "../game/crew";
 import { useGame } from "../game/store";
 
@@ -10,7 +11,14 @@ export function TitleScreen() {
   const savedAt = useGame((s) => s.savedAt);
 
   return (
-    <div className="title-screen">
+    <div
+      className="title-screen"
+      style={
+        {
+          "--title-bg": `url("${ASSET.bg("academy_gate_day")}")`,
+        } as CSSProperties
+      }
+    >
       <div className="title-card">
         <img src={ASSET.logo} alt="Meka Musume" />
         <h1>Tokyo Kikai Academy</h1>

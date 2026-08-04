@@ -75,13 +75,15 @@ export const SIGNATURE_LABEL: Record<CrewId, string> = {
   yuu: "Directive",
 };
 
+const BASE = import.meta.env.BASE_URL;
+
 export const ASSET = {
-  bg: (name: string) => `/assets/bg/${name}.png`,
-  cg: (name: string) => `/assets/cg/${name}.png`,
-  sprite: (who: string, expr = "neutral") => `/assets/sprites/${who}/${expr}.png`,
-  logo: "/assets/logo.png",
-  simTile: (name: string) => `/assets/sim/tiles/${name}.png`,
+  bg: (name: string) => `${BASE}assets/bg/${name}.png`,
+  cg: (name: string) => `${BASE}assets/cg/${name}.png`,
+  sprite: (who: string, expr = "neutral") => `${BASE}assets/sprites/${who}/${expr}.png`,
+  logo: `${BASE}assets/logo.png`,
+  simTile: (name: string) => `${BASE}assets/sim/tiles/${name}.png`,
   simUnit: (team: "ally" | "enemy", cls: string) =>
-    `/assets/sim/units/${team}_${cls}.png`,
-  gui: (name: string) => `/assets/gui/${name}`,
+    `${BASE}assets/sim/units/${team}_${cls}.png`,
+  gui: (name: string) => `${BASE}assets/gui/${name}`,
 };

@@ -13,6 +13,14 @@ npm install
 npm run dev
 ```
 
+## Publish to GitHub Pages
+
+```bash
+npm run deploy
+```
+
+Builds with base `/meka-musume-browser/` and force-pushes the `gh-pages` branch.
+
 ## Systems
 
 - Day / fatigue / INT / Squad STR
@@ -23,14 +31,3 @@ npm run dev
 ## Stack
 
 React + Vite + TypeScript + Zustand
-
-## Deploy notes
-
-The live site is served from the `gh-pages` branch.
-After changing the game, rebuild and republish:
-
-```bash
-$env:VITE_BASE="/meka-musume-browser/"   # PowerShell
-npm run build
-# then copy dist/ onto the gh-pages branch and push
-```
