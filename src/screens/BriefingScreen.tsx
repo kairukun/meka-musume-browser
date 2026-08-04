@@ -60,7 +60,10 @@ export function BriefingScreen() {
     } else if (storyId.startsWith("outing_")) {
       addFatigue(-14);
       spendDay();
-      notify("Outing complete — fatigue down, day advanced");
+      useGame.setState((st) => ({
+        cohesion: Math.min(100, st.cohesion + 5),
+      }));
+      notify("Outing complete — fatigue down · cohesion +5 · day advanced");
       openHub();
     } else if (storyId.startsWith("bond_")) {
       const m = /^bond_(\w+)_(\d+)$/.exec(storyId);

@@ -30,6 +30,7 @@ export function TopBar({ showStats = true }: { showStats?: boolean }) {
   const intelligence = useGame((s) => s.intelligence);
   const fatigue = useGame((s) => s.fatigue);
   const squadStr = useGame((s) => s.squadStr());
+  const simCredits = useGame((s) => s.simCredits);
   const saveGame = useGame((s) => s.saveGame);
   const setScreen = useGame((s) => s.setScreen);
   const screen = useGame((s) => s.screen);
@@ -51,6 +52,9 @@ export function TopBar({ showStats = true }: { showStats?: boolean }) {
           </div>
           <div className="stat-chip">
             Squad STR <strong>{squadStr}</strong>
+          </div>
+          <div className="stat-chip">
+            Credits <strong>{simCredits}</strong>
           </div>
         </>
       )}

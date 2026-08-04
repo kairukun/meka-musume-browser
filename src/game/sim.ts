@@ -1,4 +1,5 @@
 import { ASSET } from "./crew";
+import type { DoctrineId } from "./development";
 import { fatigueDrillMult } from "./formulas";
 import type { CrewId } from "./types";
 
@@ -78,7 +79,12 @@ export interface SimBattle {
   opforStr: number;
 }
 
-function scaleStats(cls: SimClass, str: number, ally: boolean) {
+function scaleStats(
+  cls: SimClass,
+  str: number,
+  ally: boolean,
+  frameLevel = 0,
+) {
   const base = CLASS[cls];
   let hpF = 0.75 + (str / 100) * 0.4;
   let atkF = 0.7 + (str / 100) * 0.7;
@@ -86,17 +92,33 @@ function scaleStats(cls: SimClass, str: number, ally: boolean) {
     hpF *= 0.88;
     atkF *= 0.95;
   }
+  const tune = ally ? 1 + frameLevel * 0.06 : 1;
   return {
-    hp: Math.max(14, Math.round(base.hp * hpF)),
-    atk: Math.max(5, Math.round(base.atk * atkF)),
-    defense: Math.max(3, Math.round(base.defense * atkF)),
-    move: base.move,
+    hp: Math.max(14, Math.round(base.hp * hpF * tune)),
+    atk: Math.max(5, Math.round(base.atk * atkF * tune)),
+    defense: Math.max(3, Math.round(base.defense * atkF * tune)),
+    move: base.move + (ally && frameLevel >= 3 ? 1 : 0),
     range: base.range,
     sprite: base.sprite,
   };
 }
 
-export function createSimBattle(allyStr: number, opforStr: number): SimBattle {
+export function createSimBattle(
+  allyStr: number,
+  opforStr: number,
+  opts?: {
+    frameTuning?: Record<SimClass, number>;
+    doctrines?: DoctrineId[];
+  },
+): SimBattle {
+  const tuning = opts?.frameTuning ?? {
+    Assault: 0,
+    Tank: 0,
+    Defense: 0,
+    Support: 0,
+    Command: 0,
+  };
+  const doctrines = opts?.doctrines ?? [];
   const roster: [string, string, SimClass, CrewId][] = [
     ["a_yuu", "Yuu", "Command", "yuu"],
     ["a_emi", "Emi", "Assault", "emi"],
@@ -105,13 +127,31 @@ export function createSimBattle(allyStr: number, opforStr: number): SimBattle {
     ["a_kat", "Kat", "Support", "kat"],
   ];
   const units: SimUnit[] = roster.map(([id, name, cls, who]) => {
-    const s = scaleStats(cls, allyStr, true);
-    return {
-      id, name, cls, who, team: "ally", x: null, y: null,
-      hp: s.hp, maxHp: s.hp, atk: s.atk, defense: s.defense,
-      move: s.move, range: s.range, sprite: s.sprite,
-      acted: false, sigUsed: false, atkBuff: 0, defBuff: 0,
+    const s = scaleStats(cls, allyStr, true, tuning[cls] ?? 0);
+    const u: SimUnit = {
+      id,
+      name,
+      cls,
+      who,
+      team: "ally",
+      x: null,
+      y: null,
+      hp: s.hp,
+      maxHp: s.hp,
+      atk: s.atk,
+      defense: s.defense,
+      move: s.move,
+      range: s.range,
+      sprite: s.sprite,
+      acted: false,
+      sigUsed: false,
+      atkBuff: 0,
+      defBuff: 0,
     };
+    if (doctrines.includes("iron_wall") && (cls === "Tank" || cls === "Defense")) {
+      u.defBuff += 2;
+    }
+    return u;
   });
   const foes: [string, string, SimClass, number, number][] = [
     ["e_as", "Rook-A", "Assault", 18, 3],
@@ -123,13 +163,26 @@ export function createSimBattle(allyStr: number, opforStr: number): SimBattle {
   for (const [id, name, cls, x, y] of foes) {
     const s = scaleStats(cls, opforStr, false);
     units.push({
-      id, name, cls, who: null, team: "enemy", x, y,
-      hp: s.hp, maxHp: s.hp, atk: s.atk, defense: s.defense,
-      move: s.move, range: s.range, sprite: s.sprite,
-      acted: false, sigUsed: false, atkBuff: 0, defBuff: 0,
+      id,
+      name,
+      cls,
+      who: null,
+      team: "enemy",
+      x,
+      y,
+      hp: s.hp,
+      maxHp: s.hp,
+      atk: s.atk,
+      defense: s.defense,
+      move: s.move,
+      range: s.range,
+      sprite: s.sprite,
+      acted: false,
+      sigUsed: false,
+      atkBuff: 0,
+      defBuff: 0,
     });
   }
-  // normalize OpFor HP to ally total
   const allies = units.filter((u) => u.team === "ally");
   const enemies = units.filter((u) => u.team === "enemy");
   const budget = allies.reduce((s, u) => s + u.maxHp, 0);
@@ -229,12 +282,24 @@ export function attackTiles(unit: SimUnit, x: number, y: number): [number, numbe
   return out;
 }
 
-export function calcDamage(attacker: SimUnit, defender: SimUnit, fatigue: number, markedId: string | null, breach = false) {
+export function calcDamage(
+  attacker: SimUnit,
+  defender: SimUnit,
+  fatigue: number,
+  markedId: string | null,
+  breach = false,
+  doctrines: DoctrineId[] = [],
+) {
   const atk = attacker.atk + attacker.atkBuff;
   const def = defender.defense + defender.defBuff + tileDef(defender.x!, defender.y!);
   let mult = 1.15;
   if (breach) mult *= 1.45;
-  if (markedId === defender.id && attacker.team === "ally") mult *= 1.22;
+  if (markedId === defender.id && attacker.team === "ally") {
+    mult *= doctrines.includes("mark_protocol") ? 1.32 : 1.22;
+  }
+  if (attacker.team === "ally" && attacker.cls === "Assault" && doctrines.includes("breach_net")) {
+    mult *= 1.15;
+  }
   let dmg = Math.max(2, Math.round((atk - def * 0.28) * mult * 1.2));
   if (attacker.team === "ally") dmg = Math.max(2, Math.round(dmg * fatigueDrillMult(fatigue)));
   return dmg;

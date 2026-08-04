@@ -36,7 +36,11 @@ export function SimScreen() {
   const opforStr = useGame((s) => s.opforStr(activeSim));
   const fatigue = useGame((s) => s.fatigue);
   const completeSim = useGame((s) => s.completeSim);
-  const [battle, setBattle] = useState<SimBattle>(() => createSimBattle(allyStr, opforStr));
+  const frameTuning = useGame((s) => s.frameTuning);
+  const doctrines = useGame((s) => s.doctrines);
+  const [battle, setBattle] = useState<SimBattle>(() =>
+    createSimBattle(allyStr, opforStr, { frameTuning, doctrines }),
+  );
   const [cursor, setCursor] = useState<[number, number] | null>(null);
   const selected = battle.units.find((u) => u.id === battle.selected) ?? null;
   const hoverUnit = cursor ? unitAt(battle, cursor[0], cursor[1]) : null;
@@ -50,20 +54,26 @@ export function SimScreen() {
   const forecast = useMemo(() => {
     if (!selected || battle.mode !== "act" || !hoverUnit || hoverUnit.team !== "enemy") return null;
     if (!battle.attackTiles.some(([ax, ay]) => ax === hoverUnit.x && ay === hoverUnit.y)) return null;
-    const dmg = calcDamage(selected, hoverUnit, fatigue, battle.markedId);
+    const dmg = calcDamage(selected, hoverUnit, fatigue, battle.markedId, false, doctrines);
     return { dmg, target: hoverUnit };
-  }, [selected, battle.mode, battle.attackTiles, battle.markedId, hoverUnit, fatigue]);
+  }, [selected, battle.mode, battle.attackTiles, battle.markedId, hoverUnit, fatigue, doctrines]);
 
   useEffect(() => {
     if (battle.phase !== "enemy") return;
-    const t = window.setTimeout(() => setBattle((b) => enemyStep(b, fatigue)), 320);
+    const t = window.setTimeout(
+      () => setBattle((b) => enemyStep(b, fatigue, doctrines)),
+      320,
+    );
     return () => window.clearTimeout(t);
-  }, [battle.phase, battle.units, fatigue]);
+  }, [battle.phase, battle.units, fatigue, doctrines]);
 
   useEffect(() => {
-    if (battle.phase === "win") completeSim(true);
+    if (battle.phase === "win") {
+      const clean = battle.units.filter((u) => u.team === "ally").every((u) => u.hp > 0);
+      completeSim(true, { clean });
+    }
     if (battle.phase === "lose") completeSim(false);
-  }, [battle.phase, completeSim]);
+  }, [battle.phase, battle.units, completeSim]);
 
   const phaseLabel =
     battle.phase === "deploy"
@@ -106,7 +116,7 @@ export function SimScreen() {
                 style={{ backgroundImage: `url(${tileImage(x, y)})` }}
                 onMouseEnter={() => setCursor([x, y])}
                 onFocus={() => setCursor([x, y])}
-                onClick={() => setBattle((b) => clickTile(b, x, y, fatigue))}
+                onClick={() => setBattle((b) => clickTile(b, x, y, fatigue, doctrines))}
               >
                 {u && (
                   <div
@@ -283,7 +293,7 @@ export function SimScreen() {
                 <button
                   type="button"
                   className="btn btn-primary"
-                  onClick={() => setBattle((b) => useSignature(b, fatigue))}
+                  onClick={() => setBattle((b) => useSignature(b, fatigue, doctrines))}
                 >
                   {SIGNATURE_LABEL[selected.who]}
                 </button>
@@ -305,7 +315,7 @@ export function SimScreen() {
                       moveTiles: [],
                       attackTiles: [],
                     };
-                    return finishUnit(trySupport(next, acted), acted);
+                    return finishUnit(trySupport(next, acted, doctrines), acted);
                   })
                 }
               >
@@ -351,7 +361,13 @@ function finishUnit(battle: SimBattle, _u: SimUnit): SimBattle {
   return { ...battle, selected: null, mode: "select", moveTiles: [], attackTiles: [], movedFrom: null };
 }
 
-function clickTile(battle: SimBattle, x: number, y: number, fatigue: number): SimBattle {
+function clickTile(
+  battle: SimBattle,
+  x: number,
+  y: number,
+  fatigue: number,
+  doctrines: import("../game/development").DoctrineId[],
+): SimBattle {
   const b: SimBattle = { ...battle, units: battle.units.map((u) => ({ ...u })) };
   if (b.phase === "deploy") {
     const u = b.units.find((x) => x.id === b.selected);
@@ -404,20 +420,25 @@ function clickTile(battle: SimBattle, x: number, y: number, fatigue: number): Si
     if (!u) return b;
     const target = unitAt(b, x, y);
     if (target?.team === "enemy" && b.attackTiles.some(([ax, ay]) => ax === x && ay === y)) {
-      const dmg = calcDamage(u, target, fatigue, b.markedId);
+      const dmg = calcDamage(u, target, fatigue, b.markedId, false, doctrines);
       target.hp = Math.max(0, target.hp - dmg);
       u.acted = true;
       let next: SimBattle = { ...b, log: `${u.name} hits ${target.name} — ${dmg}.` };
       if (b.markedId === target.id) next = { ...next, markedId: null };
-      next = trySupport(next, u);
+      next = trySupport(next, u, doctrines);
       return finishUnit(next, u);
     }
   }
   return b;
 }
 
-function trySupport(battle: SimBattle, u: SimUnit): SimBattle {
+function trySupport(
+  battle: SimBattle,
+  u: SimUnit,
+  doctrines: import("../game/development").DoctrineId[] = [],
+): SimBattle {
   if (!u.who || u.x == null) return battle;
+  const linkHeal = doctrines.includes("command_link") ? 3 : 2;
   for (const ally of battle.units.filter(
     (a) => a.team === "ally" && a.hp > 0 && a.id !== u.id && a.who && a.x != null,
   )) {
@@ -427,8 +448,8 @@ function trySupport(battle: SimBattle, u: SimUnit): SimBattle {
     if (battle.supportFired.includes(pair)) continue;
     u.defBuff += 2;
     ally.defBuff += 2;
-    u.hp = Math.min(u.maxHp, u.hp + 2);
-    ally.hp = Math.min(ally.maxHp, ally.hp + 2);
+    u.hp = Math.min(u.maxHp, u.hp + linkHeal);
+    ally.hp = Math.min(ally.maxHp, ally.hp + linkHeal);
     return {
       ...battle,
       supportFired: [...battle.supportFired, pair],
@@ -438,7 +459,11 @@ function trySupport(battle: SimBattle, u: SimUnit): SimBattle {
   return battle;
 }
 
-function useSignature(battle: SimBattle, fatigue: number): SimBattle {
+function useSignature(
+  battle: SimBattle,
+  fatigue: number,
+  doctrines: import("../game/development").DoctrineId[],
+): SimBattle {
   const b: SimBattle = { ...battle, units: battle.units.map((u) => ({ ...u })) };
   const u = b.units.find((x) => x.id === b.selected);
   if (!u || u.sigUsed || b.mode !== "act") return battle;
@@ -449,7 +474,7 @@ function useSignature(battle: SimBattle, fatigue: number): SimBattle {
     u.acted = true;
     b.tauntId = u.id;
     b.log = "Bulwark — OpFor drawn.";
-    return finishUnit(trySupport(b, u), u);
+    return finishUnit(trySupport(b, u, doctrines), u);
   }
   if (who === "kat") {
     const allies = b.units.filter(
@@ -462,26 +487,28 @@ function useSignature(battle: SimBattle, fatigue: number): SimBattle {
     if (!allies.length) return { ...b, log: "Patch — no ally nearby." };
     allies.sort((a, c) => a.hp / a.maxHp - c.hp / c.maxHp);
     const tgt = allies[0];
-    const heal = Math.max(4, Math.floor(tgt.maxHp * 0.22));
+    let heal = Math.max(4, Math.floor(tgt.maxHp * 0.22));
+    if (doctrines.includes("patch_grid")) heal = Math.round(heal * 1.25);
     tgt.hp = Math.min(tgt.maxHp, tgt.hp + heal);
     u.sigUsed = true;
     u.acted = true;
     b.log = `Patch — ${tgt.name} +${heal} HP.`;
-    return finishUnit(trySupport(b, u), u);
+    return finishUnit(trySupport(b, u, doctrines), u);
   }
   if (who === "yuu") {
     let n = 0;
+    const buff = doctrines.includes("command_link") ? 4 : 3;
     for (const a of b.units) {
       if (a.team !== "ally" || a.id === u.id || a.x == null) continue;
       if (Math.abs(a.x - u.x!) + Math.abs(a.y! - u.y!) <= 2) {
-        a.atkBuff += 3;
+        a.atkBuff += buff;
         n++;
       }
     }
     u.sigUsed = true;
     u.acted = true;
     b.log = `Directive — +ATK to ${n} allies.`;
-    return finishUnit(trySupport(b, u), u);
+    return finishUnit(trySupport(b, u, doctrines), u);
   }
   const targets = b.units.filter(
     (t) =>
@@ -494,15 +521,19 @@ function useSignature(battle: SimBattle, fatigue: number): SimBattle {
   targets.sort((a, c) => a.hp - c.hp);
   const tgt = targets[0];
   if (who === "naomi") b.markedId = tgt.id;
-  const dmg = calcDamage(u, tgt, fatigue, b.markedId, who === "emi");
+  const dmg = calcDamage(u, tgt, fatigue, b.markedId, who === "emi", doctrines);
   tgt.hp = Math.max(0, tgt.hp - dmg);
   u.sigUsed = true;
   u.acted = true;
   b.log = `${SIGNATURE_LABEL[who!]} — ${dmg} dmg.`;
-  return finishUnit(trySupport(b, u), u);
+  return finishUnit(trySupport(b, u, doctrines), u);
 }
 
-function enemyStep(battle: SimBattle, fatigue: number): SimBattle {
+function enemyStep(
+  battle: SimBattle,
+  fatigue: number,
+  doctrines: import("../game/development").DoctrineId[] = [],
+): SimBattle {
   const b: SimBattle = { ...battle, units: battle.units.map((u) => ({ ...u })) };
   const ready = b.units.filter((u) => u.team === "enemy" && u.hp > 0 && !u.acted);
   if (!ready.length) {
@@ -527,7 +558,7 @@ function enemyStep(battle: SimBattle, fatigue: number): SimBattle {
     for (const a of allies) {
       const d = Math.abs(tx - a.x!) + Math.abs(ty - a.y!);
       if (d < unit.range[0] || d > unit.range[1]) continue;
-      let fs = calcDamage(unit, a, fatigue, null) * 3;
+      let fs = calcDamage(unit, a, fatigue, null, false, doctrines) * 3;
       if (b.tauntId === a.id) fs += 70;
       if (fs > bestFs) {
         bestFs = fs;
@@ -541,7 +572,7 @@ function enemyStep(battle: SimBattle, fatigue: number): SimBattle {
     unit.x = best.x;
     unit.y = best.y;
     if (best.foe) {
-      const dmg = calcDamage(unit, best.foe, fatigue, null);
+      const dmg = calcDamage(unit, best.foe, fatigue, null, false, doctrines);
       best.foe.hp = Math.max(0, best.foe.hp - dmg);
       b.log = `${unit.name} hits ${best.foe.name} — ${dmg}.`;
     } else b.log = `${unit.name} advances.`;

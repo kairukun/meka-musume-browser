@@ -55,10 +55,10 @@ export function ReportScreen() {
     ["Briefing", "briefing"],
     ["Crew check-ins", "meet_crew"],
     ["Combat Basics", "lecture_01"],
-    ["Drill 01 Breach", "drill_01"],
-    ["Drill 02 Hold", "drill_02"],
-    ["Drill 03 Mark", "drill_03"],
-    ["Sim Battle", "sim_battle"],
+    ["Sim 01 Street Sweep", "sim_01"],
+    ["Sim 02 Crossfire", "sim_02"],
+    ["Sim 03 Hold the Block", "sim_03"],
+    ["Sim 04 City Core", "sim_04"],
     ["Coastal Alert", "coastal"],
   ] as const;
 

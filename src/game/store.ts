@@ -2,6 +2,21 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { BOND_CREW, CREW, FATIGUE_MAX, INTELLIGENCE_MAX } from "./crew";
 import {
+  COHESION_MAX,
+  CONDITIONING_MAX,
+  DOCTRINE_CAP,
+  DOCTRINES,
+  developmentStrBonus,
+  emptyFacilities,
+  emptyFrameTuning,
+  FACILITIES,
+  FRAME_MAX,
+  FRAME_TUNE_COST,
+  type DoctrineId,
+  type FacilityId,
+  type FrameClass,
+} from "./development";
+import {
   affinityRankForValue,
   clamp,
   clampAffinity,
@@ -38,12 +53,19 @@ export interface GameState {
   hubTalked: Record<Exclude<CrewId, "yuu">, boolean>;
   chapter1IntroDone: boolean;
   lecture01Done: boolean;
-  /** Progressive sim clears */
   simCleared: Record<SimLevelId, boolean>;
   simBattlesWon: number;
   coastalAlertReady: boolean;
   coastalAlertSeen: boolean;
   activeSim: SimLevelId;
+  /** Squad development */
+  simCredits: number;
+  frameTuning: Record<FrameClass, number>;
+  doctrines: DoctrineId[];
+  cohesion: number;
+  facilities: Record<FacilityId, boolean>;
+  conditioning: number;
+  pendingDoctrinePick: boolean;
   notifyQueue: NotifyItem[];
   notifySeq: number;
   lastChoiceLine: string | null;
@@ -58,6 +80,7 @@ export interface GameState {
   spendDay: () => void;
   canTrain: () => boolean;
   squadStr: () => number;
+  developmentBonus: () => number;
   opforStr: (mode?: "match" | "sim" | SimLevelId) => number;
   affinityRank: (who: CrewId) => number;
   pendingBond: () => { who: Exclude<CrewId, "yuu">; rank: number } | null;
@@ -75,7 +98,11 @@ export interface GameState {
   completeLecture: () => void;
   markTalked: (who: Exclude<CrewId, "yuu">) => void;
   startSim: (id: SimLevelId) => void;
-  completeSim: (won: boolean) => void;
+  completeSim: (won: boolean, opts?: { clean?: boolean }) => void;
+  pickDoctrine: (id: DoctrineId) => void;
+  skipDoctrine: () => void;
+  tuneFrame: (cls: FrameClass) => boolean;
+  buyFacility: (id: FacilityId) => boolean;
   markCoastalSeen: () => void;
   resetGame: () => void;
   saveGame: () => void;
@@ -111,6 +138,13 @@ const initial = {
   coastalAlertReady: false,
   coastalAlertSeen: false,
   activeSim: "sim_01" as SimLevelId,
+  simCredits: 0,
+  frameTuning: emptyFrameTuning(),
+  doctrines: [] as DoctrineId[],
+  cohesion: 0,
+  facilities: emptyFacilities(),
+  conditioning: 0,
+  pendingDoctrinePick: false,
   notifyQueue: [] as NotifyItem[],
   notifySeq: 0,
   lastChoiceLine: null as string | null,
@@ -207,7 +241,18 @@ export const useGame = create<GameState>()(
 
       squadStr: () => {
         const st = get();
-        return squadCombatStrength(st.affinity, st.intelligence);
+        return squadCombatStrength(st.affinity, st.intelligence, get().developmentBonus());
+      },
+
+      developmentBonus: () => {
+        const st = get();
+        return developmentStrBonus({
+          frameTuning: st.frameTuning,
+          doctrines: st.doctrines,
+          cohesion: st.cohesion,
+          facilities: st.facilities,
+          conditioning: st.conditioning,
+        });
       },
 
       opforStr: (mode = "match") => opposingSquadStrength(get().squadStr(), mode),
@@ -333,9 +378,21 @@ export const useGame = create<GameState>()(
       },
 
       rest: () => {
+        const before = get().fatigue;
+        const midBand = before >= 35 && before < 85;
         get().addFatigue(-22);
+        if (get().facilities.medbay) get().addFatigue(-4);
         get().spendDay();
-        get().notify("Rested — Fatigue −22 · day advanced");
+        if (midBand && get().conditioning < CONDITIONING_MAX) {
+          set((st) => ({ conditioning: st.conditioning + 1 }));
+          get().notify(
+            `Active recovery — Conditioning ${get().conditioning}/${CONDITIONING_MAX} · Squad STR up`,
+          );
+        } else {
+          get().notify("Rested — Fatigue down · day advanced");
+        }
+        // Outing-adjacent cohesion tick for resting the bay together
+        set((st) => ({ cohesion: clamp(st.cohesion + 2, 0, COHESION_MAX) }));
         get().openHubWithPriority();
       },
 
@@ -353,24 +410,104 @@ export const useGame = create<GameState>()(
 
       startSim: (id) => set({ activeSim: id, screen: "sim" }),
 
-      completeSim: (won) => {
+      completeSim: (won, opts) => {
         const id = get().activeSim;
         const def = simLevelDef(id);
         if (won) {
+          const clean = !!opts?.clean;
+          const creditGain = clean ? 3 : 2;
+          const cohesionGain = clean ? 10 : 5;
           set((st) => ({
             simCleared: { ...st.simCleared, [id]: true },
             simBattlesWon: st.simBattlesWon + 1,
+            simCredits: st.simCredits + creditGain,
+            cohesion: clamp(st.cohesion + cohesionGain, 0, COHESION_MAX),
             ...(id === "sim_03" && !st.coastalAlertSeen ? { coastalAlertReady: true } : {}),
           }));
           get().addIntelligence(3);
-          get().addFatigue(6);
-          get().notify(`${def.label} won — INT +3 · day advanced`);
+          get().addFatigue(get().facilities.medbay ? 4 : 6);
+          get().notify(
+            `${def.label} won — +${creditGain} credits · cohesion ${clean ? "+10" : "+5"} · INT +3`,
+          );
+          get().spendDay();
+          if (get().doctrines.length < DOCTRINE_CAP) {
+            set({ pendingDoctrinePick: true, screen: "doctrine" });
+          } else {
+            get().openHubWithPriority();
+          }
         } else {
+          set((st) => ({
+            cohesion: clamp(st.cohesion - 6, 0, COHESION_MAX),
+          }));
           get().addFatigue(8);
-          get().notify(`${def.label} lost — day advanced`);
+          get().notify(`${def.label} lost — cohesion −6 · day advanced`);
+          get().spendDay();
+          get().openHubWithPriority();
         }
-        get().spendDay();
+      },
+
+      pickDoctrine: (docId) => {
+        const st = get();
+        if (st.doctrines.includes(docId) || st.doctrines.length >= DOCTRINE_CAP) {
+          get().skipDoctrine();
+          return;
+        }
+        set({
+          doctrines: [...st.doctrines, docId],
+          pendingDoctrinePick: false,
+        });
+        get().notify(`Doctrine locked — ${DOCTRINES[docId].name} · Squad STR +${DOCTRINES[docId].str}`);
         get().openHubWithPriority();
+      },
+
+      skipDoctrine: () => {
+        set({ pendingDoctrinePick: false });
+        get().notify("Doctrine deferred — slot kept open");
+        get().openHubWithPriority();
+      },
+
+      tuneFrame: (cls) => {
+        const st = get();
+        if (st.frameTuning[cls] >= FRAME_MAX) {
+          get().notify(`${cls} already at max tune.`);
+          return false;
+        }
+        if (st.simCredits < FRAME_TUNE_COST) {
+          get().notify(`Need ${FRAME_TUNE_COST} sim credits to tune.`);
+          return false;
+        }
+        set({
+          simCredits: st.simCredits - FRAME_TUNE_COST,
+          frameTuning: { ...st.frameTuning, [cls]: st.frameTuning[cls] + 1 },
+        });
+        get().addFatigue(3);
+        get().notify(
+          `${cls} frame tuned to Lv${get().frameTuning[cls]} — Squad STR +2 · −${FRAME_TUNE_COST} credits`,
+        );
+        return true;
+      },
+
+      buyFacility: (fid) => {
+        const st = get();
+        const fac = FACILITIES[fid];
+        if (st.facilities[fid]) {
+          get().notify(`${fac.name} already online.`);
+          return false;
+        }
+        if (fac.requiresSim && !st.simCleared[fac.requiresSim as SimLevelId]) {
+          get().notify(`Clear ${fac.requiresSim.replace("_", " ").toUpperCase()} first.`);
+          return false;
+        }
+        if (st.simCredits < fac.cost) {
+          get().notify(`Need ${fac.cost} sim credits.`);
+          return false;
+        }
+        set({
+          simCredits: st.simCredits - fac.cost,
+          facilities: { ...st.facilities, [fid]: true },
+        });
+        get().notify(`${fac.name} online — Squad STR +${fac.str}`);
+        return true;
       },
 
       markCoastalSeen: () => {
@@ -389,6 +526,13 @@ export const useGame = create<GameState>()(
           bondSeen: {},
           hubTalked: { emi: false, yuki: false, naomi: false, kat: false },
           simCleared: emptySimCleared(),
+          frameTuning: emptyFrameTuning(),
+          facilities: emptyFacilities(),
+          doctrines: [],
+          simCredits: 0,
+          cohesion: 0,
+          conditioning: 0,
+          pendingDoctrinePick: false,
           notifyQueue: [],
           savedAt: null,
         }),
@@ -412,13 +556,20 @@ export const useGame = create<GameState>()(
     }),
     {
       name: "meka-musume-save",
-      version: 2,
+      version: 3,
       migrate: (persisted) => {
         const p = (persisted ?? {}) as Record<string, unknown>;
         return {
           ...p,
           simCleared: migrateSimCleared(p),
           activeSim: (p.activeSim as SimLevelId) || "sim_01",
+          simCredits: typeof p.simCredits === "number" ? p.simCredits : 0,
+          frameTuning: (p.frameTuning as Record<FrameClass, number>) || emptyFrameTuning(),
+          doctrines: Array.isArray(p.doctrines) ? (p.doctrines as DoctrineId[]) : [],
+          cohesion: typeof p.cohesion === "number" ? p.cohesion : 0,
+          facilities: (p.facilities as Record<FacilityId, boolean>) || emptyFacilities(),
+          conditioning: typeof p.conditioning === "number" ? p.conditioning : 0,
+          pendingDoctrinePick: false,
         };
       },
       partialize: (st) => {
@@ -432,6 +583,7 @@ export const useGame = create<GameState>()(
           spendDay: _g,
           canTrain: _h,
           squadStr: _i,
+          developmentBonus: _dev,
           opforStr: _j,
           affinityRank: _k,
           pendingBond: _l,
@@ -450,6 +602,10 @@ export const useGame = create<GameState>()(
           markTalked: _y,
           startSim: _z,
           completeSim: _aa,
+          pickDoctrine: _pd,
+          skipDoctrine: _sd,
+          tuneFrame: _tf,
+          buyFacility: _bf,
           markCoastalSeen: _ab,
           resetGame: _ac,
           saveGame: _save,

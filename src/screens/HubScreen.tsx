@@ -78,6 +78,14 @@ export function HubScreen() {
             </button>
             <button
               type="button"
+              className="btn"
+              onClick={() => setScreen("develop")}
+            >
+              Squad Development
+              <span className="muted"> · tune · facilities · doctrine</span>
+            </button>
+            <button
+              type="button"
               className="btn btn-primary"
               onClick={() => {
                 if (!canTrain) {
@@ -118,7 +126,8 @@ export function HubScreen() {
           <ul className="help-list" style={{ marginTop: 10 }}>
             <li>Talks are free. Major actions advance the day.</li>
             <li>Bond scenes unlock at Affinity 3 / 6 / 10.</li>
-            <li>Signatures: Breach · Bulwark · Mark · Patch · Directive</li>
+            <li>Win sims for credits · spend them on frame tunes & facilities.</li>
+            <li>Rest while Winded/Tired for Conditioning (+Squad STR).</li>
           </ul>
         </div>
       </aside>

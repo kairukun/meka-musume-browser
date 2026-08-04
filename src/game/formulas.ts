@@ -33,6 +33,7 @@ export function combatRating(
 export function squadCombatStrength(
   affinity: Record<Exclude<CrewId, "yuu">, number>,
   intelligence: number,
+  developmentBonus = 0,
 ) {
   const pilots = PILOT_IDS.reduce(
     (sum, id) => sum + combatRating(id, affinity, intelligence),
@@ -41,7 +42,11 @@ export function squadCombatStrength(
   const support = Math.floor(combatRating("kat", affinity, intelligence) * 0.45);
   const command = Math.floor(combatRating("yuu", affinity, intelligence) * 0.35);
   const doctrine = Math.floor(intelligence * 0.55);
-  return clamp(Math.floor((pilots + support + command + doctrine) / 4.5), 1, 99);
+  return clamp(
+    Math.floor((pilots + support + command + doctrine) / 4.5) + developmentBonus,
+    1,
+    99,
+  );
 }
 
 export function opposingSquadStrength(

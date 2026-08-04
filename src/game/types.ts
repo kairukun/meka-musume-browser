@@ -8,6 +8,8 @@ export type ScreenId =
   | "report"
   | "drill"
   | "sim"
+  | "develop"
+  | "doctrine"
   | "bond"
   | "coastal";
 

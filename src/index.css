@@ -547,6 +547,21 @@ img {
   font-size: 15px;
 }
 
+.develop .panel {
+  margin-top: 4px;
+}
+
+.dev-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.develop .action-stack .btn {
+  justify-content: space-between;
+  text-align: left;
+}
+
 .roster-row {
   display: grid;
   grid-template-columns: 72px 1fr;

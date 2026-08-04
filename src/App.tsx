@@ -1,5 +1,6 @@
 import { StatusRail, TopBar } from "./components/Shell";
 import { BriefingScreen } from "./screens/BriefingScreen";
+import { DevelopScreen, DoctrineScreen } from "./screens/DevelopScreen";
 import { HubScreen } from "./screens/HubScreen";
 import { ReportScreen, RosterScreen } from "./screens/RosterReport";
 import { SimScreen } from "./screens/SimScreen";
@@ -24,6 +25,8 @@ export default function App() {
         {screen === "roster" && <RosterScreen />}
         {screen === "report" && <ReportScreen />}
         {screen === "drill" && <TrainingScreen />}
+        {screen === "develop" && <DevelopScreen />}
+        {screen === "doctrine" && <DoctrineScreen />}
         {screen === "sim" && <SimScreen />}
       </main>
     </div>
