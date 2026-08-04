@@ -1,18 +1,29 @@
 import { StatusRail, TopBar } from "./components/Shell";
 import { BriefingScreen } from "./screens/BriefingScreen";
 import { DevelopScreen, DoctrineScreen } from "./screens/DevelopScreen";
+import { GalleryScreen } from "./screens/GalleryScreen";
 import { HubScreen } from "./screens/HubScreen";
 import { ReportScreen, RosterScreen } from "./screens/RosterReport";
+import { SavesScreen } from "./screens/SavesScreen";
 import { SimScreen } from "./screens/SimScreen";
 import { TitleScreen } from "./screens/TitleScreen";
 import { TrainingScreen } from "./screens/TrainingScreen";
 import { useGame } from "./game/store";
+import { useEffect } from "react";
+import { ensureAudio, setAudioMuted, stopAmbient } from "./game/audio";
 
 export default function App() {
   const screen = useGame((s) => s.screen);
+  const audioMuted = useGame((s) => s.audioMuted);
   const showChrome = screen !== "title" && screen !== "sim";
 
   const bleed = screen === "title" || screen === "sim" || screen === "story";
+
+  useEffect(() => {
+    setAudioMuted(audioMuted);
+    if (audioMuted) stopAmbient();
+    else ensureAudio();
+  }, [audioMuted]);
 
   return (
     <div className="game">
@@ -28,6 +39,8 @@ export default function App() {
         {screen === "develop" && <DevelopScreen />}
         {screen === "doctrine" && <DoctrineScreen />}
         {screen === "sim" && <SimScreen />}
+        {screen === "gallery" && <GalleryScreen />}
+        {screen === "saves" && <SavesScreen />}
       </main>
     </div>
   );

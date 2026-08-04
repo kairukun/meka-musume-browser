@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { CharacterPortrait } from "../components/CharacterPortrait";
+import { ensureAudio, sfxClick, sfxConfirm } from "../game/audio";
 import { ASSET, CREW } from "../game/crew";
-import { STORIES, shuffleOptions } from "../game/content";
+import { resolveStory, shuffleOptions } from "../game/content";
 import { LOCKED_DIALOG_LINES, ollamaRemixDialogue, probeOllama } from "../game/ollama";
 import { useGame } from "../game/store";
 import type { AffinityOption, CrewId } from "../game/types";
@@ -21,10 +22,23 @@ export function BriefingScreen() {
   const openHub = useGame((s) => s.openHubWithPriority);
   const markBondSeen = useGame((s) => s.markBondSeen);
   const markCoastalSeen = useGame((s) => s.markCoastalSeen);
+  const rememberChoice = useGame((s) => s.rememberChoice);
   const notify = useGame((s) => s.notify);
+  const fatigue = useGame((s) => s.fatigue);
+  const choiceMemory = useGame((s) => s.choiceMemory);
+  const coastalPressure = useGame((s) => s.coastalPressure);
+  const lastSimWon = useGame((s) => s.lastSimWon);
   const set = useGame.setState;
 
-  const lines = storyId ? STORIES[storyId] ?? [] : [];
+  const lines = useMemo(() => {
+    if (!storyId) return [];
+    return resolveStory(storyId, {
+      fatigue,
+      choiceMemory,
+      coastalPressure,
+      lastSimWon,
+    });
+  }, [storyId, fatigue, choiceMemory, coastalPressure, lastSimWon]);
   const line = lines[storyIndex];
   const [log, setLog] = useState<LogMsg[]>([]);
   const [choices, setChoices] = useState<AffinityOption[] | null>(null);
@@ -32,6 +46,10 @@ export function BriefingScreen() {
   const [done, setDone] = useState(false);
   const [dialogLive, setDialogLive] = useState(false);
   const [dialogBusy, setDialogBusy] = useState(false);
+
+  useEffect(() => {
+    ensureAudio();
+  }, []);
 
   useEffect(() => {
     setLog([]);
@@ -44,10 +62,7 @@ export function BriefingScreen() {
     setChoices(baseChoices);
     setExpr(line.portrait?.expr ?? "neutral");
     setDialogLive(false);
-    setLog((prev) => {
-      const next = [...prev, { who: line.speaker ?? null, text: line.text }];
-      return next.slice(-8);
-    });
+    setLog((prev) => [...prev, { who: line.speaker ?? null, text: line.text }].slice(-8));
 
     let cancelled = false;
     setDialogBusy(true);
@@ -71,10 +86,7 @@ export function BriefingScreen() {
       setLog((prev) => {
         if (!prev.length) return prev;
         const copy = [...prev];
-        copy[copy.length - 1] = {
-          who: line.speaker ?? null,
-          text: remix.text,
-        };
+        copy[copy.length - 1] = { who: line.speaker ?? null, text: remix.text };
         return copy;
       });
       if (remix.choices) setChoices(remix.choices);
@@ -155,6 +167,8 @@ export function BriefingScreen() {
   }
 
   const onChoice = (opt: AffinityOption) => {
+    sfxConfirm();
+    if (opt.tag) rememberChoice(opt.tag);
     if (storyId === "lecture_01") {
       if (opt.line === "roles") {
         addIntelligence(3);
@@ -197,6 +211,8 @@ export function BriefingScreen() {
       <div className="briefing-body">
         <div className="briefing-live" aria-live="polite">
           {dialogBusy ? "Ollama rewriting…" : dialogLive ? "Live dialogue" : "Script dialogue"}
+          {fatigue >= 70 ? " · Winded" : ""}
+          {coastalPressure >= 3 ? ` · Coastal ${coastalPressure}/8` : ""}
         </div>
         <div className="briefing-log">
           {log.map((m, i) => (
@@ -209,14 +225,26 @@ export function BriefingScreen() {
         {choices ? (
           <div className={`choice-grid${dialogBusy ? " is-remixing" : ""}`}>
             {choices.map((c, i) => (
-              <button key={`${i}-${c.delta}-${c.expr ?? ""}`} type="button" className="btn" onClick={() => onChoice(c)}>
+              <button
+                key={`${i}-${c.delta}-${c.expr ?? ""}`}
+                type="button"
+                className="btn"
+                onClick={() => onChoice(c)}
+              >
                 {c.label}
               </button>
             ))}
           </div>
         ) : (
           <div className="briefing-nav">
-            <button type="button" className="btn btn-primary" onClick={advanceStory}>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => {
+                sfxClick();
+                advanceStory();
+              }}
+            >
               Continue
             </button>
           </div>

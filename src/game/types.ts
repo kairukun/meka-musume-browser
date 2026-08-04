@@ -11,7 +11,9 @@ export type ScreenId =
   | "develop"
   | "doctrine"
   | "bond"
-  | "coastal";
+  | "coastal"
+  | "gallery"
+  | "saves";
 
 /** Progressive simulated battles (replaces mock drills). */
 export type SimLevelId = "sim_01" | "sim_02" | "sim_03" | "sim_04";
@@ -37,6 +39,8 @@ export interface AffinityOption {
   delta: number;
   expr?: string;
   line?: string;
+  /** Optional memory key recorded when this choice is picked (e.g. emi_hard). */
+  tag?: string;
 }
 
 export interface StoryLine {

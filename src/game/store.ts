@@ -66,6 +66,13 @@ export interface GameState {
   facilities: Record<FacilityId, boolean>;
   conditioning: number;
   pendingDoctrinePick: boolean;
+  choiceMemory: Record<string, string>;
+  coastalPressure: number;
+  tutorialDone: boolean;
+  lastSimWon: boolean | null;
+  pendingLossBanter: boolean;
+  gallerySeen: Record<string, boolean>;
+  audioMuted: boolean;
   notifyQueue: NotifyItem[];
   notifySeq: number;
   lastChoiceLine: string | null;
@@ -77,6 +84,10 @@ export interface GameState {
   addFatigue: (n: number) => void;
   addIntelligence: (n: number) => void;
   addAffinity: (who: Exclude<CrewId, "yuu">, amount: number) => number;
+  rememberChoice: (tag: string) => void;
+  markTutorialDone: () => void;
+  unlockGallery: (id: string) => void;
+  setAudioMuted: (on: boolean) => void;
   spendDay: () => void;
   canTrain: () => boolean;
   squadStr: () => number;
@@ -145,6 +156,13 @@ const initial = {
   facilities: emptyFacilities(),
   conditioning: 0,
   pendingDoctrinePick: false,
+  choiceMemory: {} as Record<string, string>,
+  coastalPressure: 0,
+  tutorialDone: false,
+  lastSimWon: null as boolean | null,
+  pendingLossBanter: false,
+  gallerySeen: {} as Record<string, boolean>,
+  audioMuted: false,
   notifyQueue: [] as NotifyItem[],
   notifySeq: 0,
   lastChoiceLine: null as string | null,
@@ -234,8 +252,24 @@ export const useGame = create<GameState>()(
             day -= 30;
             month = month === "April" ? "May" : "June";
           }
-          return { gameDay: day, gameMonth: month };
+          const coastalPressure = Math.min(8, st.coastalPressure + (st.simCleared.sim_01 ? 1 : 0));
+          if (coastalPressure >= 3 && coastalPressure > st.coastalPressure && !st.coastalAlertSeen) {
+            queueMicrotask(() =>
+              get().notify(`Coastal pressure ${coastalPressure}/8 — UN chatter rising`),
+            );
+          }
+          return { gameDay: day, gameMonth: month, coastalPressure };
         }),
+
+      rememberChoice: (tag) =>
+        set((st) => ({ choiceMemory: { ...st.choiceMemory, [tag]: tag } })),
+
+      markTutorialDone: () => set({ tutorialDone: true }),
+
+      unlockGallery: (id) =>
+        set((st) => ({ gallerySeen: { ...st.gallerySeen, [id]: true } })),
+
+      setAudioMuted: (on) => set({ audioMuted: on }),
 
       canTrain: () => get().fatigue < 85,
 
@@ -277,6 +311,7 @@ export const useGame = create<GameState>()(
       markBondSeen: (who, rank) =>
         set((st) => ({
           bondSeen: { ...st.bondSeen, [`bond_${who}_${rank}`]: true },
+          gallerySeen: { ...st.gallerySeen, [`bond_${who}_${rank}`]: true },
         })),
 
       crewCheckinsDone: () => {
@@ -365,6 +400,11 @@ export const useGame = create<GameState>()(
 
       openHubWithPriority: () => {
         const st = get();
+        if (st.pendingLossBanter) {
+          set({ pendingLossBanter: false });
+          get().startStory("hub_loss");
+          return;
+        }
         if (st.coastalAlertReady && !st.coastalAlertSeen) {
           get().startStory("coastal");
           return;
@@ -422,6 +462,8 @@ export const useGame = create<GameState>()(
             simBattlesWon: st.simBattlesWon + 1,
             simCredits: st.simCredits + creditGain,
             cohesion: clamp(st.cohesion + cohesionGain, 0, COHESION_MAX),
+            lastSimWon: true,
+            gallerySeen: { ...st.gallerySeen, [`sim_${id}`]: true },
             ...(id === "sim_03" && !st.coastalAlertSeen ? { coastalAlertReady: true } : {}),
           }));
           get().addIntelligence(3);
@@ -438,6 +480,9 @@ export const useGame = create<GameState>()(
         } else {
           set((st) => ({
             cohesion: clamp(st.cohesion - 6, 0, COHESION_MAX),
+            lastSimWon: false,
+            pendingLossBanter: true,
+            coastalPressure: Math.min(8, st.coastalPressure + 1),
           }));
           get().addFatigue(8);
           get().notify(`${def.label} lost — cohesion −6 · day advanced`);
@@ -511,7 +556,12 @@ export const useGame = create<GameState>()(
       },
 
       markCoastalSeen: () => {
-        set({ coastalAlertSeen: true, coastalAlertReady: false });
+        set((st) => ({
+          coastalAlertSeen: true,
+          coastalAlertReady: false,
+          gallerySeen: { ...st.gallerySeen, coastal: true, cg_academy_gate: true },
+          choiceMemory: { ...st.choiceMemory, coastal_pressure_seen: "1" },
+        }));
         get().addIntelligence(2);
         get().addFatigue(4);
         get().notify("Coastal Alert logged — INT +2 · Installment 2 foreshadowed");
@@ -533,6 +583,12 @@ export const useGame = create<GameState>()(
           cohesion: 0,
           conditioning: 0,
           pendingDoctrinePick: false,
+          choiceMemory: {},
+          coastalPressure: 0,
+          tutorialDone: false,
+          lastSimWon: null,
+          pendingLossBanter: false,
+          gallerySeen: {},
           notifyQueue: [],
           savedAt: null,
         }),
@@ -556,7 +612,7 @@ export const useGame = create<GameState>()(
     }),
     {
       name: "meka-musume-save",
-      version: 3,
+      version: 4,
       migrate: (persisted) => {
         const p = (persisted ?? {}) as Record<string, unknown>;
         return {
@@ -570,6 +626,13 @@ export const useGame = create<GameState>()(
           facilities: (p.facilities as Record<FacilityId, boolean>) || emptyFacilities(),
           conditioning: typeof p.conditioning === "number" ? p.conditioning : 0,
           pendingDoctrinePick: false,
+          choiceMemory: (p.choiceMemory as Record<string, string>) || {},
+          coastalPressure: typeof p.coastalPressure === "number" ? p.coastalPressure : 0,
+          tutorialDone: !!p.tutorialDone,
+          lastSimWon: typeof p.lastSimWon === "boolean" ? p.lastSimWon : null,
+          pendingLossBanter: false,
+          gallerySeen: (p.gallerySeen as Record<string, boolean>) || {},
+          audioMuted: !!p.audioMuted,
         };
       },
       partialize: (st) => {
@@ -580,6 +643,10 @@ export const useGame = create<GameState>()(
           addFatigue: _d,
           addIntelligence: _e,
           addAffinity: _f,
+          rememberChoice: _rc,
+          markTutorialDone: _mt,
+          unlockGallery: _ug,
+          setAudioMuted: _sam,
           spendDay: _g,
           canTrain: _h,
           squadStr: _i,

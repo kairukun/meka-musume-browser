@@ -140,6 +140,12 @@ export function HubScreen() {
         <button type="button" className="btn" onClick={() => setScreen("report")}>
           Training Report
         </button>
+        <button type="button" className="btn" onClick={() => setScreen("gallery")}>
+          Gallery
+        </button>
+        <button type="button" className="btn" onClick={() => setScreen("saves")}>
+          Save Slots
+        </button>
         <button type="button" className="btn btn-ghost" onClick={() => set({ screen: "title" })}>
           Title Screen
         </button>

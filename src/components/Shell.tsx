@@ -34,6 +34,9 @@ export function TopBar({ showStats = true }: { showStats?: boolean }) {
   const saveGame = useGame((s) => s.saveGame);
   const setScreen = useGame((s) => s.setScreen);
   const screen = useGame((s) => s.screen);
+  const audioMuted = useGame((s) => s.audioMuted);
+  const setAudioMuted = useGame((s) => s.setAudioMuted);
+  const coastalPressure = useGame((s) => s.coastalPressure);
 
   return (
     <header className="topbar">
@@ -56,11 +59,24 @@ export function TopBar({ showStats = true }: { showStats?: boolean }) {
           <div className="stat-chip">
             Credits <strong>{simCredits}</strong>
           </div>
+          {coastalPressure > 0 && (
+            <div className="stat-chip">
+              Coast <strong>{coastalPressure}/8</strong>
+            </div>
+          )}
         </>
       )}
       <div className="topbar-spacer" />
       {screen !== "title" && (
         <>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => setAudioMuted(!audioMuted)}
+            title="Toggle ambient/SFX"
+          >
+            {audioMuted ? "Unmute" : "Mute"}
+          </button>
           <button type="button" className="btn btn-primary" onClick={saveGame}>
             Save
           </button>

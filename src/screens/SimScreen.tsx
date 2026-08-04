@@ -4,13 +4,15 @@ import { ASSET, CREW, SIGNATURE_LABEL } from "../game/crew";
 import {
   applyEnemyAction,
   endEnemyPhase,
+  getOllamaEnabled,
   listEnemyActions,
+  pickHeuristicAction,
+  setOllamaEnabled,
 } from "../game/enemyAi";
 import { ollamaPickAction, probeOllama } from "../game/ollama";
+import { ensureAudio, sfxHit, sfxLose, sfxWin } from "../game/audio";
 import {
-  SIM_DEPLOY,
   SIM_H,
-  SIM_MAP,
   SIM_W,
   allAlliesPlaced,
   attackTiles,
@@ -46,14 +48,14 @@ export function SimScreen() {
   const frameTuning = useGame((s) => s.frameTuning);
   const doctrines = useGame((s) => s.doctrines);
   const [battle, setBattle] = useState<SimBattle>(() =>
-    createSimBattle(allyStr, opforStr, { frameTuning, doctrines }),
+    createSimBattle(allyStr, opforStr, { frameTuning, doctrines, levelId: activeSim }),
   );
   const [cursor, setCursor] = useState<[number, number] | null>(null);
   const selected = battle.units.find((u) => u.id === battle.selected) ?? null;
   const hoverUnit = cursor ? unitAt(battle, cursor[0], cursor[1]) : null;
   const focus = hoverUnit ?? selected ?? battle.units.find((u) => u.team === "ally" && u.hp > 0) ?? null;
   const terrain = cursor
-    ? { label: tileLabel(cursor[0], cursor[1]), def: tileDef(cursor[0], cursor[1]) }
+    ? { label: tileLabel(battle.map, cursor[0], cursor[1]), def: tileDef(battle.map, cursor[0], cursor[1]) }
     : { label: "Ash Plaza", def: 0 };
 
   const levelLabel = activeSim.replace("_", " ").toUpperCase();
@@ -61,41 +63,44 @@ export function SimScreen() {
   const forecast = useMemo(() => {
     if (!selected || battle.mode !== "act" || !hoverUnit || hoverUnit.team !== "enemy") return null;
     if (!battle.attackTiles.some(([ax, ay]) => ax === hoverUnit.x && ay === hoverUnit.y)) return null;
-    const dmg = calcDamage(selected, hoverUnit, fatigue, battle.markedId, false, doctrines);
+    const dmg = calcDamage(selected, hoverUnit, fatigue, battle.markedId, false, doctrines, battle.map);
     return { dmg, target: hoverUnit };
   }, [selected, battle.mode, battle.attackTiles, battle.markedId, hoverUnit, fatigue, doctrines]);
 
+  const [useOllama, setUseOllama] = useState(() => getOllamaEnabled());
   const [ollamaReady, setOllamaReady] = useState(false);
   const [ollamaModels, setOllamaModels] = useState<string[]>([]);
   const [aiThinking, setAiThinking] = useState(false);
   const [ollamaError, setOllamaError] = useState<string | null>(null);
-  const [retryTick, setRetryTick] = useState(0);
+  const [showTutorial, setShowTutorial] = useState(() => !useGame.getState().tutorialDone);
+  const [debrief, setDebrief] = useState<null | {
+    won: boolean;
+    clean: boolean;
+    mvp: string;
+    downed: string[];
+    tip: string;
+  }>(null);
   const enemyBusy = useRef(false);
+  const finishSent = useRef(false);
 
-  const refreshOllama = async () => {
-    const r = await probeOllama();
-    setOllamaReady(r.ok);
-    setOllamaModels(r.models);
-    return r;
-  };
+  useEffect(() => { ensureAudio(); }, []);
 
   useEffect(() => {
     let alive = true;
-    refreshOllama().then((r) => {
-      if (!alive) return;
-      setOllamaReady(r.ok);
-      setOllamaModels(r.models);
-    });
-    return () => {
-      alive = false;
-    };
-  }, []);
+    if (useOllama) {
+      void probeOllama().then((r) => {
+        if (!alive) return;
+        setOllamaReady(r.ok);
+        setOllamaModels(r.models);
+      });
+    }
+    return () => { alive = false; };
+  }, [useOllama]);
 
   useEffect(() => {
     if (battle.phase !== "enemy") {
       enemyBusy.current = false;
       setAiThinking(false);
-      setOllamaError(null);
       return;
     }
     if (enemyBusy.current) return;
@@ -106,85 +111,71 @@ export function SimScreen() {
       const snap = battle;
       const ready = snap.units.filter((u) => u.team === "enemy" && u.hp > 0 && !u.acted);
       if (!ready.length) {
-        if (!cancelled) {
-          setBattle(endEnemyPhase(snap));
-          enemyBusy.current = false;
-        }
+        if (!cancelled) { setBattle(endEnemyPhase(snap)); enemyBusy.current = false; }
         return;
       }
       const unit = ready[0];
       const allies = snap.units.filter((u) => u.team === "ally" && u.hp > 0 && u.x != null);
       if (!allies.length) {
-        if (!cancelled) {
-          setBattle({ ...snap, phase: "lose" });
-          enemyBusy.current = false;
-        }
-        return;
-      }
-
-      let models = ollamaModels;
-      let readyOk = ollamaReady;
-      if (!readyOk || !models.length) {
-        const r = await refreshOllama();
-        readyOk = r.ok;
-        models = r.models;
-      }
-
-      if (!readyOk || !models.length) {
-        if (!cancelled) {
-          setOllamaError("Ollama offline — install/start Ollama, pull a model, then Retry.");
-          setBattle((b) => ({
-            ...b,
-            log: "OpFor waiting on Ollama (localhost:11434)…",
-          }));
-          enemyBusy.current = false;
-        }
+        if (!cancelled) { setBattle({ ...snap, phase: "lose" }); enemyBusy.current = false; }
         return;
       }
 
       const actions = listEnemyActions(snap, unit, fatigue, doctrines);
-      if (!actions.length) {
-        if (!cancelled) {
-          setBattle(applyEnemyAction(snap, unit.id, { id: -1, x: unit.x!, y: unit.y!, foeId: null, blurb: "Hold" }, fatigue, doctrines));
-          enemyBusy.current = false;
+      let pick = pickHeuristicAction(actions);
+
+      if (useOllama) {
+        let models = ollamaModels;
+        let readyOk = ollamaReady;
+        if (!readyOk || !models.length) {
+          const r = await probeOllama();
+          readyOk = r.ok;
+          models = r.models;
+          setOllamaReady(r.ok);
+          setOllamaModels(r.models);
         }
-        return;
+        if (readyOk && models.length) {
+          setAiThinking(true);
+          setOllamaError(null);
+          const llm = await ollamaPickAction(unit.name, unit.cls, actions, models);
+          setAiThinking(false);
+          if (llm) pick = llm;
+          else setOllamaError("Ollama missed — academy OpFor.");
+        } else {
+          setOllamaError("Ollama offline — academy OpFor active.");
+          await new Promise((r) => window.setTimeout(r, 220));
+        }
+      } else {
+        await new Promise((r) => window.setTimeout(r, 260));
       }
 
-      setAiThinking(true);
-      setOllamaError(null);
-      let pick = await ollamaPickAction(unit.name, unit.cls, actions, models);
-      if (!pick) pick = await ollamaPickAction(unit.name, unit.cls, actions, models);
-      setAiThinking(false);
-
-      if (cancelled) {
-        enemyBusy.current = false;
-        return;
-      }
-      if (!pick) {
-        setOllamaError("Ollama did not return a valid move. Retry OpFor turn.");
-        setBattle((b) => ({ ...b, log: `${unit.name} stalled — Ollama no reply.` }));
-        enemyBusy.current = false;
-        return;
-      }
+      if (cancelled || !pick) { enemyBusy.current = false; return; }
+      if (pick.foeId) sfxHit();
       setBattle(applyEnemyAction(snap, unit.id, pick, fatigue, doctrines));
       enemyBusy.current = false;
     };
-
     void run();
-    return () => {
-      cancelled = true;
-    };
-  }, [battle.phase, battle.units, fatigue, doctrines, ollamaReady, ollamaModels, retryTick]);
-
+    return () => { cancelled = true; };
+  }, [battle.phase, battle.units, fatigue, doctrines, useOllama, ollamaReady, ollamaModels]);
 
   useEffect(() => {
-    if (battle.phase === "win") {
-      const clean = battle.units.filter((u) => u.team === "ally").every((u) => u.hp > 0);
-      completeSim(true, { clean });
-    }
-    if (battle.phase === "lose") completeSim(false);
-  }, [battle.phase, battle.units, completeSim]);
+    if (battle.phase !== "win" && battle.phase !== "lose") return;
+    if (finishSent.current || debrief) return;
+    finishSent.current = true;
+    const allies = battle.units.filter((u) => u.team === "ally");
+    const clean = allies.every((u) => u.hp > 0);
+    const living = allies.filter((u) => u.hp > 0).sort((a, c) => c.hp / c.maxHp - a.hp / a.maxHp);
+    const downed = allies.filter((u) => u.hp <= 0).map((u) => u.name);
+    if (battle.phase === "win") sfxWin();
+    else sfxLose();
+    setDebrief({
+      won: battle.phase === "win",
+      clean,
+      mvp: living[0]?.name ?? "Team 07",
+      downed,
+      tip: battle.tip,
+    });
+  }, [battle.phase, battle.units, debrief]);
 
   const phaseLabel =
     battle.phase === "deploy"
@@ -205,11 +196,11 @@ export function SimScreen() {
             const x = i % SIM_W;
             const y = Math.floor(i / SIM_W);
             const deploySpot =
-              battle.phase === "deploy" && SIM_DEPLOY.some(([dx, dy]) => dx === x && dy === y);
+              battle.phase === "deploy" && battle.deploy.some(([dx, dy]) => dx === x && dy === y);
             const move = battle.moveTiles.some(([mx, my]) => mx === x && my === y);
             const atk = battle.attackTiles.some(([ax, ay]) => ax === x && ay === y);
             const u = unitAt(battle, x, y);
-            const blocked = [3, 4, 5].includes(SIM_MAP[y][x]);
+            const blocked = [3, 4, 5].includes(battle.map[y][x]);
             return (
               <button
                 key={`${x}-${y}`}
@@ -224,7 +215,7 @@ export function SimScreen() {
                 ]
                   .filter(Boolean)
                   .join(" ")}
-                style={{ backgroundImage: `url(${tileImage(x, y)})` }}
+                style={{ backgroundImage: `url(${tileImage(battle.map, x, y)})` }}
                 onMouseEnter={() => setCursor([x, y])}
                 onFocus={() => setCursor([x, y])}
                 onClick={() => setBattle((b) => clickTile(b, x, y, fatigue, doctrines))}
@@ -274,26 +265,22 @@ export function SimScreen() {
 
         <div className="simfe-chip log">{battle.log}</div>
 
-        <div className="simfe-chip ollama-toggle">
+        <div className="simfe-chip tip-chip">{battle.tip}</div>
+        <label className="simfe-chip ollama-toggle">
+          <input
+            type="checkbox"
+            checked={useOllama}
+            onChange={(e) => {
+              setUseOllama(e.target.checked);
+              setOllamaEnabled(e.target.checked);
+              setOllamaError(null);
+            }}
+          />
           <span>
-            OpFor: Ollama
-            {ollamaReady ? " · online" : " · offline"}
+            Ollama OpFor
+            {useOllama ? (ollamaReady ? " · online" : " · offline→academy") : " · academy AI"}
           </span>
-          {(ollamaError || !ollamaReady) && (
-            <button
-              type="button"
-              className="btn"
-              style={{ padding: "2px 8px", fontSize: 11 }}
-              onClick={() => {
-                setOllamaError(null);
-                enemyBusy.current = false;
-                void refreshOllama().then(() => setRetryTick((n) => n + 1));
-              }}
-            >
-              Retry
-            </button>
-          )}
-        </div>
+        </label>
         {ollamaError && <div className="simfe-chip ollama-err">{ollamaError}</div>}
 
         {focus && (
@@ -358,7 +345,7 @@ export function SimScreen() {
           {Array.from({ length: SIM_H * SIM_W }, (_, i) => {
             const x = i % SIM_W;
             const y = Math.floor(i / SIM_W);
-            const t = SIM_MAP[y][x];
+            const t = battle.map[y][x];
             const u = unitAt(battle, x, y);
             return (
               <i
@@ -390,7 +377,7 @@ export function SimScreen() {
                           ...b,
                           selected: u.id,
                           mode: "place",
-                          moveTiles: [...SIM_DEPLOY],
+                          moveTiles: [...b.deploy],
                           log: `Place ${u.name} on a blue tile.`,
                         }))
                       }
@@ -483,6 +470,58 @@ export function SimScreen() {
           </button>
         </div>
       </div>
+
+      {showTutorial && (
+        <div className="sim-overlay">
+          <div className="sim-overlay-card">
+            <h2>Combat Basics</h2>
+            <ol>
+              <li>Deploy all five on blue tiles, then Begin.</li>
+              <li>Select → move (blue) → attack red tiles or use a signature.</li>
+              <li>Rubble grants DEF. Fatigue softens your hits and worsens theirs.</li>
+              <li>Academy AI is default; enable Ollama for LLM OpFor.</li>
+            </ol>
+            <p className="muted">{battle.tip}</p>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => {
+                useGame.getState().markTutorialDone();
+                setShowTutorial(false);
+              }}
+            >
+              Got it
+            </button>
+          </div>
+        </div>
+      )}
+
+      {debrief && (
+        <div className="sim-overlay">
+          <div className="sim-overlay-card">
+            <h2>{debrief.won ? "Sim Debrief — Victory" : "Sim Debrief — Defeat"}</h2>
+            <p>
+              MVP: <strong>{debrief.mvp}</strong>
+              {debrief.clean ? " · Clean run" : ""}
+            </p>
+            {debrief.downed.length > 0 && (
+              <p className="muted">Downed: {debrief.downed.join(", ")}</p>
+            )}
+            <p className="muted">{debrief.tip}</p>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => {
+                const d = debrief;
+                setDebrief(null);
+                completeSim(d.won, { clean: d.clean });
+              }}
+            >
+              Continue
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -506,7 +545,7 @@ function clickTile(
   if (b.phase === "deploy") {
     const u = b.units.find((x) => x.id === b.selected);
     if (!u || u.team !== "ally") return b;
-    if (!SIM_DEPLOY.some(([dx, dy]) => dx === x && dy === y)) {
+    if (!battle.deploy.some(([dx, dy]) => dx === x && dy === y)) {
       return { ...b, log: "Deploy only on highlighted tiles." };
     }
     if (unitAt(b, x, y) && unitAt(b, x, y)!.id !== u.id) return { ...b, log: "Tile occupied." };
@@ -516,7 +555,7 @@ function clickTile(
     return {
       ...b,
       selected: left[0]?.id ?? null,
-      moveTiles: left[0] ? [...SIM_DEPLOY] : [],
+      moveTiles: left[0] ? [...battle.deploy] : [],
       log: left[0] ? `${u.name} deployed. Place ${left[0].name}.` : "All placed. Press Begin Battle.",
     };
   }
@@ -554,7 +593,7 @@ function clickTile(
     if (!u) return b;
     const target = unitAt(b, x, y);
     if (target?.team === "enemy" && b.attackTiles.some(([ax, ay]) => ax === x && ay === y)) {
-      const dmg = calcDamage(u, target, fatigue, b.markedId, false, doctrines);
+      const dmg = calcDamage(u, target, fatigue, b.markedId, false, doctrines, b.map);
       target.hp = Math.max(0, target.hp - dmg);
       u.acted = true;
       let next: SimBattle = { ...b, log: `${u.name} hits ${target.name} — ${dmg}.` };
@@ -655,7 +694,7 @@ function useSignature(
   targets.sort((a, c) => a.hp - c.hp);
   const tgt = targets[0];
   if (who === "naomi") b.markedId = tgt.id;
-  const dmg = calcDamage(u, tgt, fatigue, b.markedId, who === "emi", doctrines);
+  const dmg = calcDamage(u, tgt, fatigue, b.markedId, who === "emi", doctrines, b.map);
   tgt.hp = Math.max(0, tgt.hp - dmg);
   u.sigUsed = true;
   u.acted = true;

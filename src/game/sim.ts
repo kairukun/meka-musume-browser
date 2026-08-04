@@ -1,33 +1,16 @@
 import { ASSET } from "./crew";
 import type { DoctrineId } from "./development";
-import { fatigueDrillMult } from "./formulas";
-import type { CrewId } from "./types";
+import { fatigueDrillMult, fatigueIncomingMult } from "./formulas";
+import { simMapDef, type TileGrid } from "./simMaps";
+import type { CrewId, SimLevelId } from "./types";
 
 export const SIM_W = 20;
 export const SIM_H = 12;
 export const SIM_TILE = 36;
 
-/** 0 grass, 1 dirt, 2 rubble(+def), 3 border, 4 rock, 5 building */
-export const SIM_MAP: number[][] = [
-  [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3],
-  [3, 0, 0, 1, 0, 0, 4, 0, 1, 0, 0, 1, 0, 4, 0, 0, 1, 0, 0, 3],
-  [3, 0, 1, 0, 0, 5, 0, 0, 0, 2, 2, 0, 0, 0, 5, 0, 0, 1, 0, 3],
-  [3, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 3],
-  [3, 0, 0, 2, 0, 0, 4, 0, 0, 5, 0, 0, 0, 4, 0, 0, 2, 0, 0, 3],
-  [3, 0, 1, 0, 0, 1, 0, 2, 0, 0, 0, 0, 2, 0, 1, 0, 0, 1, 0, 3],
-  [3, 0, 1, 0, 0, 1, 0, 2, 0, 0, 0, 0, 2, 0, 1, 0, 0, 1, 0, 3],
-  [3, 0, 0, 2, 0, 0, 4, 0, 0, 5, 0, 0, 0, 4, 0, 0, 2, 0, 0, 3],
-  [3, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 3],
-  [3, 0, 1, 0, 0, 5, 0, 0, 0, 2, 2, 0, 0, 0, 5, 0, 0, 1, 0, 3],
-  [3, 0, 0, 1, 0, 0, 4, 0, 1, 0, 0, 1, 0, 4, 0, 0, 1, 0, 0, 3],
-  [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3],
-];
-
-export const SIM_DEPLOY: [number, number][] = [
-  [1, 3], [1, 4], [1, 5], [1, 6], [1, 7], [1, 8],
-  [2, 3], [2, 4], [2, 5], [2, 6], [2, 7], [2, 8],
-  [3, 4], [3, 5], [3, 6], [3, 7],
-];
+/** @deprecated use battle.map — kept for TrainingScreen previews */
+export const SIM_MAP: TileGrid = simMapDef("sim_01").map;
+export const SIM_DEPLOY = simMapDef("sim_01").deploy;
 
 const CLASS = {
   Assault: { move: 5, hp: 26, atk: 16, defense: 4, sprite: "assault", range: [1, 2] as [number, number] },
@@ -63,6 +46,10 @@ export interface SimUnit {
 export type SimPhase = "deploy" | "player" | "enemy" | "win" | "lose";
 
 export interface SimBattle {
+  levelId: SimLevelId;
+  map: TileGrid;
+  deploy: [number, number][];
+  tip: string;
   phase: SimPhase;
   turn: number;
   units: SimUnit[];
@@ -77,14 +64,11 @@ export interface SimBattle {
   markedId: string | null;
   allyStr: number;
   opforStr: number;
+  /** Enemy signature used this battle (one shared for OpFor drama) */
+  enemySigUsed: boolean;
 }
 
-function scaleStats(
-  cls: SimClass,
-  str: number,
-  ally: boolean,
-  frameLevel = 0,
-) {
+function scaleStats(cls: SimClass, str: number, ally: boolean, frameLevel = 0) {
   const base = CLASS[cls];
   let hpF = 0.75 + (str / 100) * 0.4;
   let atkF = 0.7 + (str / 100) * 0.7;
@@ -109,8 +93,11 @@ export function createSimBattle(
   opts?: {
     frameTuning?: Record<SimClass, number>;
     doctrines?: DoctrineId[];
+    levelId?: SimLevelId;
   },
 ): SimBattle {
+  const levelId = opts?.levelId ?? "sim_01";
+  const layout = simMapDef(levelId);
   const tuning = opts?.frameTuning ?? {
     Assault: 0,
     Tank: 0,
@@ -153,23 +140,16 @@ export function createSimBattle(
     }
     return u;
   });
-  const foes: [string, string, SimClass, number, number][] = [
-    ["e_as", "Rook-A", "Assault", 18, 3],
-    ["e_tk", "Rook-T", "Tank", 18, 5],
-    ["e_df", "Rook-D", "Defense", 18, 8],
-    ["e_sp", "Rook-S", "Support", 17, 4],
-    ["e_cm", "Rook-C", "Command", 17, 7],
-  ];
-  for (const [id, name, cls, x, y] of foes) {
-    const s = scaleStats(cls, opforStr, false);
+  for (const foe of layout.foes) {
+    const s = scaleStats(foe.cls, opforStr, false);
     units.push({
-      id,
-      name,
-      cls,
+      id: foe.id,
+      name: foe.name,
+      cls: foe.cls,
       who: null,
       team: "enemy",
-      x,
-      y,
+      x: foe.x,
+      y: foe.y,
       hp: s.hp,
       maxHp: s.hp,
       atk: s.atk,
@@ -195,34 +175,39 @@ export function createSimBattle(
     }
   }
   return {
+    levelId,
+    map: layout.map,
+    deploy: layout.deploy,
+    tip: layout.tip,
     phase: "deploy",
     turn: 1,
     units,
     selected: allies[0]?.id ?? null,
     mode: "place",
-    moveTiles: [...SIM_DEPLOY],
+    moveTiles: [...layout.deploy],
     attackTiles: [],
     movedFrom: null,
-    log: `Place all five mechs, then Begin. OpFor STR ${opforStr}.`,
+    log: `${layout.name} — place five mechs, then Begin. OpFor STR ${opforStr}.`,
     supportFired: [],
     tauntId: null,
     markedId: null,
     allyStr,
     opforStr,
+    enemySigUsed: false,
   };
 }
 
-export function tilePassable(x: number, y: number) {
+export function tilePassable(map: TileGrid, x: number, y: number) {
   if (x < 0 || y < 0 || x >= SIM_W || y >= SIM_H) return false;
-  return ![3, 4, 5].includes(SIM_MAP[y][x]);
+  return ![3, 4, 5].includes(map[y][x]);
 }
 
-export function tileDef(x: number, y: number) {
-  return SIM_MAP[y][x] === 2 ? 3 : 0;
+export function tileDef(map: TileGrid, x: number, y: number) {
+  return map[y][x] === 2 ? 3 : 0;
 }
 
-export function tileImage(x: number, y: number, _deploy = false) {
-  const t = SIM_MAP[y][x];
+export function tileImage(map: TileGrid, x: number, y: number) {
+  const t = map[y][x];
   if (t === 5) return ASSET.simTile("building");
   if (t === 4) return ASSET.simTile("rock");
   if (t === 3) return ASSET.simTile("wall");
@@ -231,8 +216,8 @@ export function tileImage(x: number, y: number, _deploy = false) {
   return ASSET.simTile("grass");
 }
 
-export function tileLabel(x: number, y: number) {
-  const t = SIM_MAP[y]?.[x];
+export function tileLabel(map: TileGrid, x: number, y: number) {
+  const t = map[y]?.[x];
   if (t === 5) return "Ruined Building";
   if (t === 4) return "Wreckage";
   if (t === 3) return "Barrier";
@@ -254,8 +239,13 @@ export function bfsMove(battle: SimBattle, unit: SimUnit): [number, number][] {
     const [cx, cy] = q.shift()!;
     const dist = reach.get(`${cx},${cy}`)!;
     if (dist >= unit.move) continue;
-    for (const [nx, ny] of [[cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]] as [number, number][]) {
-      if (!tilePassable(nx, ny)) continue;
+    for (const [nx, ny] of [
+      [cx + 1, cy],
+      [cx - 1, cy],
+      [cx, cy + 1],
+      [cx, cy - 1],
+    ] as [number, number][]) {
+      if (!tilePassable(battle.map, nx, ny)) continue;
       const key = `${nx},${ny}`;
       if (reach.has(key)) continue;
       const other = unitAt(battle, nx, ny);
@@ -289,9 +279,12 @@ export function calcDamage(
   markedId: string | null,
   breach = false,
   doctrines: DoctrineId[] = [],
+  map?: TileGrid,
 ) {
+  const tile =
+    map && defender.x != null && defender.y != null ? tileDef(map, defender.x, defender.y) : 0;
   const atk = attacker.atk + attacker.atkBuff;
-  const def = defender.defense + defender.defBuff + tileDef(defender.x!, defender.y!);
+  const def = defender.defense + defender.defBuff + tile;
   let mult = 1.15;
   if (breach) mult *= 1.45;
   if (markedId === defender.id && attacker.team === "ally") {
@@ -300,10 +293,10 @@ export function calcDamage(
   if (attacker.team === "ally" && attacker.cls === "Assault" && doctrines.includes("breach_net")) {
     mult *= 1.15;
   }
-  // OpFor hits a bit softer — academy sparring, not UN coastal fire
   if (attacker.team === "enemy") mult *= 0.88;
   let dmg = Math.max(2, Math.round((atk - def * 0.28) * mult * 1.2));
   if (attacker.team === "ally") dmg = Math.max(2, Math.round(dmg * fatigueDrillMult(fatigue)));
+  if (attacker.team === "enemy") dmg = Math.max(2, Math.round(dmg * fatigueIncomingMult(fatigue)));
   return dmg;
 }
 
@@ -316,5 +309,44 @@ export function checkEnd(battle: SimBattle): SimPhase | null {
   const foes = battle.units.filter((u) => u.team === "enemy" && u.hp > 0);
   if (!foes.length) return "win";
   if (!allies.length) return "lose";
+  return null;
+}
+
+/** One-shot enemy signature by class — fair but spicy. */
+export function tryEnemySignature(battle: SimBattle, unit: SimUnit): SimBattle | null {
+  if (battle.enemySigUsed || unit.sigUsed || unit.x == null) return null;
+  const b: SimBattle = { ...battle, units: battle.units.map((u) => ({ ...u })), enemySigUsed: true };
+  const u = b.units.find((x) => x.id === unit.id)!;
+  u.sigUsed = true;
+  if (u.cls === "Tank") {
+    u.defBuff += 3;
+    b.tauntId = u.id;
+    b.log = `${u.name} locks armor — OpFor taunt.`;
+    return b;
+  }
+  if (u.cls === "Assault") {
+    u.atkBuff += 3;
+    b.log = `${u.name} primes breach thrusters.`;
+    return b;
+  }
+  if (u.cls === "Support") {
+    const allies = b.units.filter((a) => a.team === "enemy" && a.hp > 0 && a.id !== u.id);
+    allies.sort((a, c) => a.hp / a.maxHp - c.hp / c.maxHp);
+    if (allies[0]) {
+      const heal = Math.max(3, Math.floor(allies[0].maxHp * 0.15));
+      allies[0].hp = Math.min(allies[0].maxHp, allies[0].hp + heal);
+      b.log = `${u.name} patches ${allies[0].name} (+${heal}).`;
+      return b;
+    }
+  }
+  if (u.cls === "Defense") {
+    const foes = b.units.filter((a) => a.team === "ally" && a.hp > 0 && a.x != null);
+    foes.sort((a, c) => a.hp - c.hp);
+    if (foes[0]) {
+      b.markedId = foes[0].id;
+      b.log = `${u.name} marks ${foes[0].name}.`;
+      return b;
+    }
+  }
   return null;
 }

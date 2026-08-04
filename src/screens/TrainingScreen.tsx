@@ -1,4 +1,5 @@
 import { SIM_LEVELS } from "../game/simLevels";
+import { simMapDef } from "../game/simMaps";
 import { useGame } from "../game/store";
 import type { SimLevelId } from "../game/types";
 
@@ -14,14 +15,14 @@ export function TrainingScreen() {
     <div className="list-screen">
       <h1>Sim Deck</h1>
       <p className="muted">
-        Progressive 5v5 sims. Your Squad STR is <strong>{squadStr}</strong>. Each level lists OpFor
-        Combat STR.
+        Progressive 5v5 sims on distinct maps. Your Squad STR is <strong>{squadStr}</strong>.
       </p>
       {!canTrain && <p className="warn">Fatigue lock — rest before launching.</p>}
 
       {SIM_LEVELS.map((level) => {
         const st = missionStatus(level.id);
         const opfor = opforStr(level.id as SimLevelId);
+        const map = simMapDef(level.id);
         return (
           <button
             key={level.id}
@@ -32,7 +33,10 @@ export function TrainingScreen() {
           >
             <span className="sim-level-main">
               <strong>{level.label}</strong>
-              <span className="muted">{level.blurb}</span>
+              <span className="muted">
+                {map.name} — {level.blurb}
+              </span>
+              <span className="muted">Tip: {map.tip}</span>
               <span className="sim-level-str">
                 OpFor Combat STR <strong>{opfor}</strong>
                 <span className="muted">
