@@ -1,10 +1,12 @@
 # Meka Musume (Browser)
 
-Native browser command game — Tokyo Kikai Academy, Team 07.
+Tokyo Kikai Academy · Team 07 command game.
 
-Not a Ren'Py port layout. Full-window dashboard, briefing panels, and fluid sim grid.
+**Play:** https://kairukun.github.io/meka-musume-browser/
 
-## Run
+**Repo:** https://github.com/kairukun/meka-musume-browser
+
+## Run locally
 
 ```bash
 npm install
@@ -15,11 +17,20 @@ npm run dev
 
 - Day / fatigue / INT / Squad STR
 - Affinity + bond ranks (3 / 6 / 10)
-- Briefings (talks, outings, lecture, coastal alert)
-- Mock drills with class signatures
-- 5v5 tile sim (deploy, move, attack, supports, signatures)
+- Briefings, drills, 5v5 sim
 - Local save (`localStorage`)
 
 ## Stack
 
 React + Vite + TypeScript + Zustand
+
+## Deploy notes
+
+The live site is served from the `gh-pages` branch.
+After changing the game, rebuild and republish:
+
+```bash
+$env:VITE_BASE="/meka-musume-browser/"   # PowerShell
+npm run build
+# then copy dist/ onto the gh-pages branch and push
+```
