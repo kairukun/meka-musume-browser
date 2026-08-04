@@ -1,21 +1,26 @@
 import { useEffect } from "react";
 import { useGame } from "../game/store";
 
-export function Toasts() {
+/** Single latest notice in chrome flow — no overlay on Bay Actions. */
+export function StatusRail() {
   const queue = useGame((s) => s.notifyQueue);
   const clear = useGame((s) => s.clearNotify);
+  const latest = queue[queue.length - 1] ?? null;
+
   useEffect(() => {
-    if (!queue.length) return;
-    const t = window.setTimeout(() => clear(queue[0].id), 2600);
+    if (!latest) return;
+    const t = window.setTimeout(() => clear(latest.id), 3200);
     return () => window.clearTimeout(t);
-  }, [queue, clear]);
+  }, [latest, clear]);
+
+  if (!latest) return null;
+
   return (
-    <div className="toasts" aria-live="polite">
-      {queue.map((n) => (
-        <div key={n.id} className="toast">
-          {n.text}
-        </div>
-      ))}
+    <div className="status-rail" aria-live="polite">
+      <p className="status-rail-text">{latest.text}</p>
+      <button type="button" className="status-rail-dismiss" onClick={() => clear(latest.id)} aria-label="Dismiss">
+        ✕
+      </button>
     </div>
   );
 }

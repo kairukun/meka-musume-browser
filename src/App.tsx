@@ -1,4 +1,4 @@
-import { TopBar, Toasts } from "./components/Shell";
+import { StatusRail, TopBar } from "./components/Shell";
 import { BriefingScreen } from "./screens/BriefingScreen";
 import { HubScreen } from "./screens/HubScreen";
 import { ReportScreen, RosterScreen } from "./screens/RosterReport";
@@ -15,8 +15,8 @@ export default function App() {
 
   return (
     <div className="game">
-      <Toasts />
       {showChrome && <TopBar />}
+      <StatusRail />
       <main className={`main${bleed ? " main-bleed" : ""}`}>
         {screen === "title" && <TitleScreen />}
         {screen === "story" && <BriefingScreen />}

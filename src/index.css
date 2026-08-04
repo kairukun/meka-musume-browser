@@ -1132,31 +1132,47 @@ img {
   }
 }
 
-/* ========== TOASTS ========== */
-.toasts {
-  position: fixed;
-  top: 64px;
-  right: 16px;
-  z-index: 50;
-  display: grid;
-  gap: 8px;
-  width: min(320px, calc(100vw - 32px));
-  pointer-events: none;
+/* ========== STATUS RAIL (in-flow, not overlay) ========== */
+.status-rail {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px var(--pad);
+  border-bottom: 1px solid #3a5a40;
+  background: linear-gradient(90deg, #143024ee, #0f1c22f0 55%, #102028ee);
+  z-index: 15;
+  animation: status-in 0.18s ease;
 }
 
-.toast {
-  background: #102028f5;
-  border: 1px solid var(--teal);
-  border-radius: 10px;
-  padding: 10px 12px;
+.status-rail-text {
+  margin: 0;
+  flex: 1;
   font-size: 13px;
-  animation: slide 0.2s ease;
+  color: #d8ffe8;
+  line-height: 1.35;
 }
 
-@keyframes slide {
+.status-rail-dismiss {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #0a1218;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1;
+}
+
+.status-rail-dismiss:hover {
+  border-color: var(--amber);
+  color: var(--text);
+}
+
+@keyframes status-in {
   from {
     opacity: 0;
-    transform: translateX(12px);
+    transform: translateY(-6px);
   }
   to {
     opacity: 1;
