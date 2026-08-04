@@ -11,6 +11,10 @@ export type ScreenId =
   | "bond"
   | "coastal";
 
+/** Progressive simulated battles (replaces mock drills). */
+export type SimLevelId = "sim_01" | "sim_02" | "sim_03" | "sim_04";
+
+/** @deprecated kept for old save migration only */
 export type DrillId = "drill_01" | "drill_02" | "drill_03";
 export type DrillOrder = "strike" | "focus" | "guard" | "breach" | "bulwark" | "mark";
 export type MissionStatus = "locked" | "open" | "done";

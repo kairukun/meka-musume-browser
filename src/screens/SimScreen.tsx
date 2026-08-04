@@ -32,7 +32,8 @@ const CLASS_ICON: Record<string, string> = {
 export function SimScreen() {
   const setScreen = useGame((s) => s.setScreen);
   const allyStr = useGame((s) => s.squadStr());
-  const opforStr = useGame((s) => s.opforStr("sim"));
+  const activeSim = useGame((s) => s.activeSim);
+  const opforStr = useGame((s) => s.opforStr(activeSim));
   const fatigue = useGame((s) => s.fatigue);
   const completeSim = useGame((s) => s.completeSim);
   const [battle, setBattle] = useState<SimBattle>(() => createSimBattle(allyStr, opforStr));
@@ -42,7 +43,9 @@ export function SimScreen() {
   const focus = hoverUnit ?? selected ?? battle.units.find((u) => u.team === "ally" && u.hp > 0) ?? null;
   const terrain = cursor
     ? { label: tileLabel(cursor[0], cursor[1]), def: tileDef(cursor[0], cursor[1]) }
-    : { label: "Ground", def: 0 };
+    : { label: "Ash Plaza", def: 0 };
+
+  const levelLabel = activeSim.replace("_", " ").toUpperCase();
 
   const forecast = useMemo(() => {
     if (!selected || battle.mode !== "act" || !hoverUnit || hoverUnit.team !== "enemy") return null;
@@ -140,8 +143,11 @@ export function SimScreen() {
         </div>
 
         <div className="simfe-chip phase">
-          <span>Turn {battle.turn}</span>
+          <span>{levelLabel}</span>
           <strong>{phaseLabel}</strong>
+          <span>
+            Turn {battle.turn} · OpFor STR {opforStr}
+          </span>
         </div>
 
         <div className="simfe-chip log">{battle.log}</div>

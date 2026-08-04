@@ -88,6 +88,7 @@ export function HubScreen() {
               }}
             >
               Training Deck
+              <span className="muted"> · sim ladder</span>
             </button>
             <button
               type="button"

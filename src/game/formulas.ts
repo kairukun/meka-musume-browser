@@ -1,5 +1,5 @@
 import { AFFINITY_MAX, BOND_THRESHOLDS, CREW, PILOT_IDS } from "./crew";
-import type { CrewId, PilotId } from "./types";
+import type { CrewId, PilotId, SimLevelId } from "./types";
 
 export function clamp(n: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, n));
@@ -46,9 +46,17 @@ export function squadCombatStrength(
 
 export function opposingSquadStrength(
   ours: number,
-  mode: "match" | "sim" | "drill_01" | "drill_02" | "drill_03" = "match",
+  mode: "match" | SimLevelId | "sim" = "match",
 ) {
-  const offset = mode === "drill_02" ? 1 : 0;
+  const offsets: Record<string, number> = {
+    match: 0,
+    sim: 9,
+    sim_01: -2,
+    sim_02: 4,
+    sim_03: 9,
+    sim_04: 15,
+  };
+  const offset = offsets[mode] ?? 0;
   return clamp(ours + offset, 1, 99);
 }
 
@@ -71,9 +79,9 @@ export function fatigueIncomingMult(fatigue: number) {
 }
 
 export function fatigueLabel(fatigue: number) {
-  if (fatigue < 35) return "Fresh — drills at full edge";
-  if (fatigue < 60) return "Winded — slight drill penalty";
-  if (fatigue < 85) return "Tired — real drill penalties";
+  if (fatigue < 35) return "Fresh — sims at full edge";
+  if (fatigue < 60) return "Winded — slight sim penalty";
+  if (fatigue < 85) return "Tired — real sim penalties";
   return "Critical — sim locks / heavy penalties";
 }
 

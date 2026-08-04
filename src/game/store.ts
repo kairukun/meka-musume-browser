@@ -15,15 +15,8 @@ import {
   shortName,
   squadCombatStrength,
 } from "./formulas";
-import type {
-  CrewId,
-  DrillId,
-  DrillOrder,
-  MissionStatus,
-  NotifyItem,
-  PilotId,
-  ScreenId,
-} from "./types";
+import { emptySimCleared, SIM_LEVELS, simLevelDef } from "./simLevels";
+import type { CrewId, MissionStatus, NotifyItem, PilotId, ScreenId, SimLevelId } from "./types";
 
 export type AffinityMap = Record<Exclude<CrewId, "yuu">, number>;
 export type BondSeen = Record<string, boolean>;
@@ -45,21 +38,17 @@ export interface GameState {
   hubTalked: Record<Exclude<CrewId, "yuu">, boolean>;
   chapter1IntroDone: boolean;
   lecture01Done: boolean;
-  drill01Done: boolean;
-  drill02Done: boolean;
-  drill03Done: boolean;
-  simBattleDone: boolean;
+  /** Progressive sim clears */
+  simCleared: Record<SimLevelId, boolean>;
   simBattlesWon: number;
   coastalAlertReady: boolean;
   coastalAlertSeen: boolean;
-  activeDrill: DrillId;
+  activeSim: SimLevelId;
   notifyQueue: NotifyItem[];
   notifySeq: number;
-  /** Last story choice result for UI */
   lastChoiceLine: string | null;
   savedAt: string | null;
 
-  // derived helpers as methods
   setScreen: (s: ScreenId) => void;
   notify: (text: string) => void;
   clearNotify: (id: number) => void;
@@ -69,7 +58,7 @@ export interface GameState {
   spendDay: () => void;
   canTrain: () => boolean;
   squadStr: () => number;
-  opforStr: (mode?: "match" | "sim" | DrillId) => number;
+  opforStr: (mode?: "match" | "sim" | SimLevelId) => number;
   affinityRank: (who: CrewId) => number;
   pendingBond: () => { who: Exclude<CrewId, "yuu">; rank: number } | null;
   markBondSeen: (who: string, rank: number) => void;
@@ -85,7 +74,7 @@ export interface GameState {
   rest: () => void;
   completeLecture: () => void;
   markTalked: (who: Exclude<CrewId, "yuu">) => void;
-  completeDrill: (id: DrillId) => void;
+  startSim: (id: SimLevelId) => void;
   completeSim: (won: boolean) => void;
   markCoastalSeen: () => void;
   resetGame: () => void;
@@ -117,19 +106,34 @@ const initial = {
   hubTalked: { emi: false, yuki: false, naomi: false, kat: false },
   chapter1IntroDone: false,
   lecture01Done: false,
-  drill01Done: false,
-  drill02Done: false,
-  drill03Done: false,
-  simBattleDone: false,
+  simCleared: emptySimCleared(),
   simBattlesWon: 0,
   coastalAlertReady: false,
   coastalAlertSeen: false,
-  activeDrill: "drill_01" as DrillId,
+  activeSim: "sim_01" as SimLevelId,
   notifyQueue: [] as NotifyItem[],
   notifySeq: 0,
   lastChoiceLine: null as string | null,
   savedAt: null as string | null,
 };
+
+function migrateSimCleared(raw: Record<string, unknown> | undefined): Record<SimLevelId, boolean> {
+  const base = emptySimCleared();
+  if (!raw) return base;
+  const old = raw as {
+    simCleared?: Partial<Record<SimLevelId, boolean>>;
+    drill01Done?: boolean;
+    drill02Done?: boolean;
+    drill03Done?: boolean;
+    simBattleDone?: boolean;
+  };
+  return {
+    sim_01: !!(old.simCleared?.sim_01 || old.drill01Done),
+    sim_02: !!(old.simCleared?.sim_02 || old.drill02Done),
+    sim_03: !!(old.simCleared?.sim_03 || old.drill03Done),
+    sim_04: !!(old.simCleared?.sim_04 || old.simBattleDone),
+  };
+}
 
 export const useGame = create<GameState>()(
   persist(
@@ -246,21 +250,21 @@ export const useGame = create<GameState>()(
           if (st.lecture01Done) return "done";
           return st.chapter1IntroDone ? "open" : "locked";
         }
-        if (id === "drill_01") {
-          if (st.drill01Done) return "done";
+        if (id === "sim_01") {
+          if (st.simCleared.sim_01) return "done";
           return get().crewCheckinsDone() && st.lecture01Done ? "open" : "locked";
         }
-        if (id === "drill_02") {
-          if (st.drill02Done) return "done";
-          return st.drill01Done ? "open" : "locked";
+        if (id === "sim_02") {
+          if (st.simCleared.sim_02) return "done";
+          return st.simCleared.sim_01 ? "open" : "locked";
         }
-        if (id === "drill_03") {
-          if (st.drill03Done) return "done";
-          return st.drill02Done ? "open" : "locked";
+        if (id === "sim_03") {
+          if (st.simCleared.sim_03) return "done";
+          return st.simCleared.sim_02 ? "open" : "locked";
         }
-        if (id === "sim_battle") {
-          if (st.simBattleDone) return "done";
-          return st.drill01Done && st.drill02Done && st.drill03Done ? "open" : "locked";
+        if (id === "sim_04") {
+          if (st.simCleared.sim_04) return "done";
+          return st.simCleared.sim_03 ? "open" : "locked";
         }
         if (id === "coastal") {
           if (st.coastalAlertSeen) return "done";
@@ -280,11 +284,11 @@ export const useGame = create<GameState>()(
         }
         if (
           !get().canTrain() &&
-          ["drill_01", "drill_02", "drill_03", "lecture_01"].some(
+          ["sim_01", "sim_02", "sim_03", "sim_04", "lecture_01"].some(
             (m) => get().missionStatus(m) === "open",
           )
         ) {
-          return "Next: Rest or outing — fatigue is blocking training.";
+          return "Next: Rest or outing — fatigue is blocking sims.";
         }
         if (get().missionStatus("meet_crew") === "open") {
           const rem =
@@ -295,16 +299,16 @@ export const useGame = create<GameState>()(
           return `Next: Crew check-ins (${rem} remaining).`;
         }
         if (get().missionStatus("lecture_01") === "open") return "Next: Combat Basics lecture.";
-        if (get().missionStatus("drill_01") === "open") return "Next: Mock Battle — Drill 01 Breach.";
-        if (get().missionStatus("drill_02") === "open")
-          return "Next: Mock Battle — Drill 02 Hold the Line.";
-        if (get().missionStatus("drill_03") === "open")
-          return "Next: Mock Battle — Drill 03 Mark & Deny.";
-        if (st.drill01Done && st.drill02Done && st.drill03Done && !st.simBattleDone) {
-          return "Next: Simulated Battle — 5v5 tile combat vs OpFor.";
+        for (const level of SIM_LEVELS) {
+          if (get().missionStatus(level.id) === "open") {
+            const opfor = get().opforStr(level.id);
+            return `Next: ${level.label} · OpFor Combat STR ${opfor}.`;
+          }
         }
-        if (st.simBattleDone) return "Sim deck unlocked. Replay drills, bond ranks, or run another sim.";
-        return "One major action per day (train / outing / rest). Talks are free.";
+        if (SIM_LEVELS.every((l) => st.simCleared[l.id])) {
+          return "Sim ladder clear. Replay levels, bond ranks, or rest.";
+        }
+        return "One major action per day (sim / outing / rest). Talks are free.";
       },
 
       agenda: () => dayAgendaLine(get().gameMonth, get().gameDay),
@@ -347,34 +351,23 @@ export const useGame = create<GameState>()(
           hubTalked: { ...st.hubTalked, [who]: true },
         })),
 
-      completeDrill: (id) => {
-        const patch: Partial<GameState> = {};
-        if (id === "drill_01") patch.drill01Done = true;
-        if (id === "drill_02") patch.drill02Done = true;
-        if (id === "drill_03") {
-          patch.drill03Done = true;
-          if (!get().coastalAlertSeen) patch.coastalAlertReady = true;
-        }
-        set(patch);
-        get().addIntelligence(2);
-        get().addFatigue(6);
-        get().spendDay();
-        get().notify(`${id.replace("_", " ").toUpperCase()} complete — INT +2 · day advanced`);
-        get().openHubWithPriority();
-      },
+      startSim: (id) => set({ activeSim: id, screen: "sim" }),
 
       completeSim: (won) => {
+        const id = get().activeSim;
+        const def = simLevelDef(id);
         if (won) {
           set((st) => ({
-            simBattleDone: true,
+            simCleared: { ...st.simCleared, [id]: true },
             simBattlesWon: st.simBattlesWon + 1,
+            ...(id === "sim_03" && !st.coastalAlertSeen ? { coastalAlertReady: true } : {}),
           }));
           get().addIntelligence(3);
           get().addFatigue(6);
-          get().notify("Simulated Battle won — INT +3 · day advanced");
+          get().notify(`${def.label} won — INT +3 · day advanced`);
         } else {
           get().addFatigue(8);
-          get().notify("Simulated Battle lost — day advanced");
+          get().notify(`${def.label} lost — day advanced`);
         }
         get().spendDay();
         get().openHubWithPriority();
@@ -395,6 +388,7 @@ export const useGame = create<GameState>()(
           routeFlags: emptyAffinity(),
           bondSeen: {},
           hubTalked: { emi: false, yuki: false, naomi: false, kat: false },
+          simCleared: emptySimCleared(),
           notifyQueue: [],
           savedAt: null,
         }),
@@ -418,6 +412,15 @@ export const useGame = create<GameState>()(
     }),
     {
       name: "meka-musume-save",
+      version: 2,
+      migrate: (persisted) => {
+        const p = (persisted ?? {}) as Record<string, unknown>;
+        return {
+          ...p,
+          simCleared: migrateSimCleared(p),
+          activeSim: (p.activeSim as SimLevelId) || "sim_01",
+        };
+      },
       partialize: (st) => {
         const {
           setScreen: _a,
@@ -445,7 +448,7 @@ export const useGame = create<GameState>()(
           rest: _w,
           completeLecture: _x,
           markTalked: _y,
-          completeDrill: _z,
+          startSim: _z,
           completeSim: _aa,
           markCoastalSeen: _ab,
           resetGame: _ac,
@@ -459,13 +462,3 @@ export const useGame = create<GameState>()(
     },
   ),
 );
-
-export type DrillUnitState = {
-  order: DrillOrder;
-  hp: number;
-  maxHp: number;
-};
-
-export function drillDamage(atk: number, defense: number, mult = 1) {
-  return Math.max(1, Math.round((atk - defense * 0.35) * mult));
-}
