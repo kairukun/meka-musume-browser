@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { CharacterPortrait } from "../components/CharacterPortrait";
 import { ASSET, CREW } from "../game/crew";
 import { STORIES, shuffleOptions } from "../game/content";
 import { useGame } from "../game/store";
@@ -143,7 +144,14 @@ export function BriefingScreen() {
     <div className="briefing">
       <div className="briefing-art">
         <img className="bg" src={line.bg ?? ASSET.bg("hangar_bay")} alt="" />
-        {portraitSrc && <img className="portrait" src={portraitSrc} alt="" />}
+        {portraitSrc && (
+          <CharacterPortrait
+            key={portraitWho}
+            src={portraitSrc}
+            alt={portraitWho ? CREW[portraitWho].short : ""}
+            variant="stage"
+          />
+        )}
       </div>
       <div className="briefing-body">
         <div className="briefing-log">

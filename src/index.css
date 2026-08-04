@@ -288,11 +288,16 @@ img {
   min-height: 220px;
   background: #080d10;
   overflow: hidden;
+  position: relative;
+}
+
+.crew-card .art img,
+.crew-card .art .char-portrait {
+  width: 100%;
+  height: 100%;
 }
 
 .crew-card .art img {
-  width: 100%;
-  height: 100%;
   object-fit: cover;
   /* Sprites are waist-up; face sits high — keep hair + chin in frame */
   object-position: center 8%;
@@ -401,13 +406,135 @@ img {
   opacity: 0.55;
 }
 
-.briefing-art .portrait {
+.briefing-art .portrait,
+.briefing-art .char-portrait {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
+}
+
+/* Live2D-lite: idle breath + expression crossfade */
+.char-portrait {
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.char-portrait__bob {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-origin: center 88%;
+  animation: char-breathe 4.6s ease-in-out infinite;
+}
+
+.char-portrait__bob.is-settle {
+  animation:
+    char-settle 0.5s ease-out,
+    char-breathe 4.6s ease-in-out 0.5s infinite;
+}
+
+.char-portrait__layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 1;
+}
+
+.char-portrait__layer.is-out {
+  opacity: 0;
+  transition: opacity 0.38s ease;
+  z-index: 1;
+}
+
+.char-portrait__layer.is-in {
+  opacity: 0;
+  animation: char-fade-in 0.38s ease forwards;
+  z-index: 2;
+}
+
+.char-portrait--stage .char-portrait__layer {
   object-fit: contain;
   object-position: center bottom;
+}
+
+.char-portrait--card {
+  width: 100%;
+  height: 100%;
+}
+
+.char-portrait--card .char-portrait__bob {
+  transform-origin: center 20%;
+  animation-duration: 5.2s;
+}
+
+.char-portrait--card .char-portrait__layer {
+  object-fit: cover;
+  object-position: center 8%;
+}
+
+.char-portrait--thumb {
+  width: 100%;
+  height: 100%;
+}
+
+.char-portrait--thumb .char-portrait__bob {
+  transform-origin: center 18%;
+  animation-duration: 5s;
+}
+
+.char-portrait--thumb .char-portrait__layer {
+  object-fit: cover;
+  object-position: center 12%;
+}
+
+@keyframes char-breathe {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(0, -1.4%, 0) scale(1.015);
+  }
+}
+
+@keyframes char-settle {
+  from {
+    transform: translate3d(0, 2.5%, 0) scale(0.985);
+    filter: brightness(0.92);
+  }
+  to {
+    transform: translate3d(0, 0, 0) scale(1);
+    filter: brightness(1);
+  }
+}
+
+@keyframes char-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .char-portrait__bob,
+  .char-portrait__bob.is-settle {
+    animation: none;
+  }
+
+  .char-portrait__layer.is-out,
+  .char-portrait__layer.is-in {
+    animation: none;
+    transition: none;
+    opacity: 1;
+  }
+
+  .char-portrait__layer.is-out {
+    display: none;
+  }
 }
 
 .briefing-body {
@@ -986,7 +1113,8 @@ img {
   border-color: #c06060;
 }
 
-.simfe-portrait img {
+.simfe-portrait img,
+.simfe-portrait .char-portrait {
   width: 100%;
   height: 100%;
   object-fit: cover;

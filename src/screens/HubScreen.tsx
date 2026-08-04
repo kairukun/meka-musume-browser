@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { CharacterPortrait } from "../components/CharacterPortrait";
 import { ASSET, CREW, CREW_ORDER } from "../game/crew";
 import { useGame } from "../game/store";
 import type { CrewId } from "../game/types";
@@ -52,7 +53,7 @@ export function HubScreen() {
               }}
             >
               <div className="art">
-                <img src={ASSET.sprite(id)} alt={c.short} />
+                <CharacterPortrait src={ASSET.sprite(id)} alt={c.short} variant="card" />
               </div>
               <div className="meta">
                 <div className="name">{c.short}</div>

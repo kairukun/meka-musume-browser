@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { CharacterPortrait } from "../components/CharacterPortrait";
 import { ASSET, CREW, SIGNATURE_LABEL } from "../game/crew";
 import {
   SIM_DEPLOY,
@@ -166,7 +167,7 @@ export function SimScreen() {
           <div className={`simfe-unitpanel ${focus.team}`}>
             <div className="simfe-portrait">
               {focus.who ? (
-                <img src={ASSET.sprite(focus.who)} alt="" />
+                <CharacterPortrait src={ASSET.sprite(focus.who)} variant="thumb" />
               ) : (
                 <img src={ASSET.simUnit(focus.team, focus.sprite)} alt="" />
               )}
