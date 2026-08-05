@@ -1,9 +1,13 @@
 import type { SimLevelId } from "./types";
 
+export type SimDifficulty = "very_easy" | "easy" | "medium" | "hard";
+
 export interface SimLevelDef {
   id: SimLevelId;
   label: string;
   blurb: string;
+  difficulty: SimDifficulty;
+  difficultyLabel: string;
   /** Added to player Squad STR to get OpFor Combat STR */
   opforOffset: number;
 }
@@ -13,26 +17,34 @@ export const SIM_LEVELS: SimLevelDef[] = [
   {
     id: "sim_01",
     label: "Sim 01 — Street Sweep",
-    blurb: "Clear a ruined block. OpFor is slightly under your rating.",
-    opforOffset: -3,
+    blurb: "Ash Plaza tutorial pressure. OpFor is clearly under your rating.",
+    difficulty: "very_easy",
+    difficultyLabel: "Very Easy",
+    opforOffset: -10,
   },
   {
     id: "sim_02",
     label: "Sim 02 — Crossfire",
-    blurb: "Intersecting lanes. OpFor near your edge.",
-    opforOffset: 1,
+    blurb: "Split lanes. OpFor still softer than Team 07.",
+    difficulty: "easy",
+    difficultyLabel: "Easy",
+    opforOffset: -4,
   },
   {
     id: "sim_03",
     label: "Sim 03 — Hold the Block",
-    blurb: "Defense under pressure. Moderately harder OpFor.",
-    opforOffset: 4,
+    blurb: "Even fight with a light edge to OpFor.",
+    difficulty: "medium",
+    difficultyLabel: "Medium",
+    opforOffset: 3,
   },
   {
     id: "sim_04",
     label: "Sim 04 — City Core",
-    blurb: "Final academy sim. Strongest opposing Combat STR.",
-    opforOffset: 8,
+    blurb: "Peak academy trial. OpFor hits above your Combat STR.",
+    difficulty: "hard",
+    difficultyLabel: "Hard",
+    opforOffset: 10,
   },
 ];
 

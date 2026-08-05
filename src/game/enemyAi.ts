@@ -52,7 +52,7 @@ export function listEnemyActions(
     for (const a of allies) {
       const d = Math.abs(tx - a.x!) + Math.abs(ty - a.y!);
       if (d < unit.range[0] || d > unit.range[1]) continue;
-      const dmg = calcDamage(unit, a, fatigue, null, false, doctrines, battle.map);
+      const dmg = calcDamage(unit, a, fatigue, null, false, doctrines, battle.map, battle.levelId);
       reachable.push({ foe: a, dmg });
     }
 
@@ -105,15 +105,18 @@ export function listEnemyActions(
   }
 
   if (!battle.enemySigUsed && !unit.sigUsed && ["Tank", "Assault", "Support", "Defense"].includes(unit.cls)) {
-    actions.push({
-      id: id++,
-      x: unit.x!,
-      y: unit.y!,
-      foeId: null,
-      score: 6,
-      blurb: `Use class signature (${unit.cls})`,
-      useSig: true,
-    });
+    // Signatures only on Medium / Hard
+    if (battle.levelId === "sim_03" || battle.levelId === "sim_04") {
+      actions.push({
+        id: id++,
+        x: unit.x!,
+        y: unit.y!,
+        foeId: null,
+        score: 6,
+        blurb: `Use class signature (${unit.cls})`,
+        useSig: true,
+      });
+    }
   }
 
   return actions;
@@ -163,7 +166,7 @@ export function applyEnemyAction(
     const foe = b.units.find((u) => u.id === action.foeId);
     if (foe && foe.hp > 0) {
       const breach = unit.cls === "Assault" && unit.atkBuff > 0;
-      const dmg = calcDamage(unit, foe, fatigue, b.markedId, breach, doctrines, b.map);
+      const dmg = calcDamage(unit, foe, fatigue, b.markedId, breach, doctrines, b.map, b.levelId);
       foe.hp = Math.max(0, foe.hp - dmg);
       b.log = `${unit.name} hits ${foe.name} — ${dmg}.`;
     } else b.log = `${unit.name} advances.`;

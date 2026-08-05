@@ -15,7 +15,8 @@ export function TrainingScreen() {
     <div className="list-screen">
       <h1>Sim Deck</h1>
       <p className="muted">
-        Progressive 5v5 sims on distinct maps. Your Squad STR is <strong>{squadStr}</strong>.
+        Four difficulties — Very Easy → Hard. Your Squad STR is <strong>{squadStr}</strong>; OpFor
+        scales from that.
       </p>
       {!canTrain && <p className="warn">Fatigue lock — rest before launching.</p>}
 
@@ -23,6 +24,9 @@ export function TrainingScreen() {
         const st = missionStatus(level.id);
         const opfor = opforStr(level.id as SimLevelId);
         const map = simMapDef(level.id);
+        const delta = opfor - squadStr;
+        const deltaLabel =
+          delta === 0 ? "even" : delta > 0 ? `+${delta} vs you` : `${delta} vs you`;
         return (
           <button
             key={level.id}
@@ -32,7 +36,10 @@ export function TrainingScreen() {
             onClick={() => startSim(level.id)}
           >
             <span className="sim-level-main">
-              <strong>{level.label}</strong>
+              <strong>
+                <span className={`diff-pill diff-${level.difficulty}`}>{level.difficultyLabel}</span>{" "}
+                {level.label.replace(/^Sim 0\d — /, "")}
+              </strong>
               <span className="muted">
                 {map.name} — {level.blurb}
               </span>
@@ -41,8 +48,7 @@ export function TrainingScreen() {
                 OpFor Combat STR <strong>{opfor}</strong>
                 <span className="muted">
                   {" "}
-                  · vs your {squadStr}
-                  {opfor >= squadStr ? " · harder" : " · easier"}
+                  · yours {squadStr} · {deltaLabel}
                 </span>
               </span>
             </span>

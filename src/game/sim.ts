@@ -54,7 +54,7 @@ export interface SimBattle {
   turn: number;
   units: SimUnit[];
   selected: string | null;
-  mode: "place" | "select" | "move" | "act";
+  mode: "place" | "select" | "command";
   moveTiles: [number, number][];
   attackTiles: [number, number][];
   movedFrom: [number, number] | null;
@@ -280,6 +280,7 @@ export function calcDamage(
   breach = false,
   doctrines: DoctrineId[] = [],
   map?: TileGrid,
+  levelId?: SimLevelId,
 ) {
   const tile =
     map && defender.x != null && defender.y != null ? tileDef(map, defender.x, defender.y) : 0;
@@ -293,7 +294,15 @@ export function calcDamage(
   if (attacker.team === "ally" && attacker.cls === "Assault" && doctrines.includes("breach_net")) {
     mult *= 1.15;
   }
-  if (attacker.team === "enemy") mult *= 0.88;
+  if (attacker.team === "enemy") {
+    const byDiff: Record<string, number> = {
+      sim_01: 0.72,
+      sim_02: 0.82,
+      sim_03: 0.9,
+      sim_04: 0.98,
+    };
+    mult *= byDiff[levelId ?? "sim_03"] ?? 0.88;
+  }
   let dmg = Math.max(2, Math.round((atk - def * 0.28) * mult * 1.2));
   if (attacker.team === "ally") dmg = Math.max(2, Math.round(dmg * fatigueDrillMult(fatigue)));
   if (attacker.team === "enemy") dmg = Math.max(2, Math.round(dmg * fatigueIncomingMult(fatigue)));

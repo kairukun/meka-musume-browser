@@ -1,105 +1,161 @@
-/** Lightweight Web Audio bed + SFX — no asset files required. */
+/**
+ * Audio — file-based BGM + SFX (CC0 / free game assets).
+ * See public/assets/audio/CREDITS.txt for sources.
+ */
 
-let ctx: AudioContext | null = null;
-let ambientNodes: { osc: OscillatorNode; gain: GainNode }[] | null = null;
+const BASE = import.meta.env.BASE_URL;
+
+const MUSIC = {
+  hub: `${BASE}assets/audio/music/hub.ogg`,
+  hangar: `${BASE}assets/audio/music/hangar-hum.ogg`,
+  battle: `${BASE}assets/audio/music/battle.ogg`,
+} as const;
+
+const SFX = {
+  click: `${BASE}assets/audio/sfx/click.wav`,
+  confirm: `${BASE}assets/audio/sfx/confirm.wav`,
+  drop: `${BASE}assets/audio/sfx/drop.wav`,
+  hit: `${BASE}assets/audio/sfx/hit.ogg`,
+  win: `${BASE}assets/audio/sfx/win.wav`,
+  lose: `${BASE}assets/audio/sfx/lose.wav`,
+} as const;
+
+export type MusicTrack = keyof typeof MUSIC | "none";
+
 let muted = false;
+let unlocked = false;
+let currentTrack: MusicTrack = "none";
+let musicEl: HTMLAudioElement | null = null;
+let humEl: HTMLAudioElement | null = null;
+const sfxCache = new Map<string, HTMLAudioElement>();
 
-function ac(): AudioContext | null {
-  if (typeof window === "undefined") return null;
-  if (!ctx) {
-    const AC = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    if (!AC) return null;
-    ctx = new AC();
+function makeAudio(src: string, loop: boolean, volume: number): HTMLAudioElement {
+  const a = new Audio(src);
+  a.loop = loop;
+  a.preload = "auto";
+  a.volume = volume;
+  return a;
+}
+
+function ensureEls() {
+  if (!musicEl) musicEl = makeAudio(MUSIC.hub, true, 0.26);
+  if (!humEl) humEl = makeAudio(MUSIC.hangar, true, 0.1);
+}
+
+async function tryPlay(el: HTMLAudioElement | null) {
+  if (!el || muted || !unlocked) return;
+  try {
+    await el.play();
+  } catch {
+    /* autoplay blocked until gesture */
   }
-  if (ctx.state === "suspended") void ctx.resume();
-  return ctx;
 }
 
 export function setAudioMuted(on: boolean) {
   muted = on;
-  if (on) stopAmbient();
+  if (on) {
+    musicEl?.pause();
+    humEl?.pause();
+  } else if (unlocked && currentTrack !== "none") {
+    void tryPlay(musicEl);
+    if (currentTrack === "hub") void tryPlay(humEl);
+  }
 }
 
 export function isAudioMuted() {
   return muted;
 }
 
-function beep(freq: number, dur: number, type: OscillatorType, vol = 0.04, when = 0) {
-  if (muted) return;
-  const c = ac();
-  if (!c) return;
-  const t0 = c.currentTime + when;
-  const osc = c.createOscillator();
-  const g = c.createGain();
-  osc.type = type;
-  osc.frequency.setValueAtTime(freq, t0);
-  g.gain.setValueAtTime(0.0001, t0);
-  g.gain.exponentialRampToValueAtTime(vol, t0 + 0.02);
-  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-  osc.connect(g);
-  g.connect(c.destination);
-  osc.start(t0);
-  osc.stop(t0 + dur + 0.02);
+/** Call from a user gesture so browsers allow playback. */
+export function unlockAudio() {
+  unlocked = true;
+  ensureEls();
+  if (!muted && currentTrack !== "none") {
+    void tryPlay(musicEl);
+    if (currentTrack === "hub") void tryPlay(humEl);
+  }
+}
+
+export function setMusicTrack(track: MusicTrack) {
+  ensureEls();
+  if (!musicEl) return;
+
+  if (track === "none") {
+    currentTrack = "none";
+    musicEl.pause();
+    humEl?.pause();
+    return;
+  }
+
+  const nextSrc = track === "battle" ? MUSIC.battle : MUSIC.hub;
+  const nextFile = track === "battle" ? "battle.ogg" : "hub.ogg";
+  const switched = !musicEl.src.includes(nextFile);
+
+  currentTrack = track;
+  if (switched) {
+    const t = musicEl.currentTime;
+    musicEl.src = nextSrc;
+    musicEl.loop = true;
+    musicEl.load();
+    // don't restore time across different tracks
+    void t;
+  }
+  musicEl.volume = track === "battle" ? 0.3 : 0.24;
+
+  if (track === "hub") {
+    if (humEl) {
+      humEl.volume = 0.09;
+      void tryPlay(humEl);
+    }
+  } else {
+    humEl?.pause();
+  }
+
+  void tryPlay(musicEl);
+}
+
+function playSfx(src: string, volume = 0.45) {
+  if (muted || !unlocked) return;
+  let base = sfxCache.get(src);
+  if (!base) {
+    base = makeAudio(src, false, volume);
+    sfxCache.set(src, base);
+  }
+  const node = base.cloneNode(true) as HTMLAudioElement;
+  node.volume = volume;
+  void node.play().catch(() => undefined);
 }
 
 export function sfxClick() {
-  beep(520, 0.06, "triangle", 0.03);
+  playSfx(SFX.click, 0.38);
 }
-
 export function sfxConfirm() {
-  beep(440, 0.08, "sine", 0.035);
-  beep(660, 0.1, "sine", 0.03, 0.06);
+  playSfx(SFX.confirm, 0.4);
 }
-
+export function sfxDrop() {
+  playSfx(SFX.drop, 0.32);
+}
 export function sfxHit() {
-  beep(180, 0.12, "square", 0.045);
-  beep(90, 0.18, "sawtooth", 0.025, 0.02);
+  playSfx(SFX.hit, 0.36);
 }
-
 export function sfxWin() {
-  beep(523, 0.12, "sine", 0.04);
-  beep(659, 0.12, "sine", 0.04, 0.1);
-  beep(784, 0.18, "sine", 0.045, 0.2);
+  playSfx(SFX.win, 0.42);
 }
-
 export function sfxLose() {
-  beep(220, 0.2, "triangle", 0.04);
-  beep(165, 0.28, "triangle", 0.035, 0.12);
+  playSfx(SFX.lose, 0.38);
 }
 
 export function startAmbient() {
-  if (muted || ambientNodes) return;
-  const c = ac();
-  if (!c) return;
-  const mk = (freq: number, vol: number) => {
-    const osc = c.createOscillator();
-    const gain = c.createGain();
-    osc.type = "sine";
-    osc.frequency.value = freq;
-    gain.gain.value = vol;
-    osc.connect(gain);
-    gain.connect(c.destination);
-    osc.start();
-    return { osc, gain };
-  };
-  ambientNodes = [mk(110, 0.012), mk(164.5, 0.008), mk(220, 0.006)];
+  setMusicTrack(currentTrack === "none" || currentTrack === "hangar" ? "hub" : currentTrack);
 }
 
 export function stopAmbient() {
-  if (!ambientNodes) return;
-  for (const n of ambientNodes) {
-    try {
-      n.osc.stop();
-      n.osc.disconnect();
-      n.gain.disconnect();
-    } catch {
-      /* ignore */
-    }
-  }
-  ambientNodes = null;
+  musicEl?.pause();
+  humEl?.pause();
 }
 
 export function ensureAudio() {
-  ac();
-  startAmbient();
+  unlockAudio();
+  if (currentTrack === "none") setMusicTrack("hub");
+  else setMusicTrack(currentTrack);
 }

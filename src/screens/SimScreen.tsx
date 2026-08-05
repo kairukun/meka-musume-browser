@@ -10,7 +10,7 @@ import {
   setOllamaEnabled,
 } from "../game/enemyAi";
 import { ollamaPickAction, probeOllama } from "../game/ollama";
-import { ensureAudio, sfxHit, sfxLose, sfxWin } from "../game/audio";
+import { ensureAudio, sfxDrop, sfxHit, sfxLose, sfxWin, setMusicTrack } from "../game/audio";
 import {
   SIM_H,
   SIM_W,
@@ -58,14 +58,42 @@ export function SimScreen() {
     ? { label: tileLabel(battle.map, cursor[0], cursor[1]), def: tileDef(battle.map, cursor[0], cursor[1]) }
     : { label: "Ash Plaza", def: 0 };
 
-  const levelLabel = activeSim.replace("_", " ").toUpperCase();
+  const levelDef = useGame((s) => s.activeSim);
+  // show difficulty on HUD
+  const difficultyLabel =
+    levelDef === "sim_01"
+      ? "Very Easy"
+      : levelDef === "sim_02"
+        ? "Easy"
+        : levelDef === "sim_03"
+          ? "Medium"
+          : "Hard";
+
+  const levelLabel = `${activeSim.replace("_", " ").toUpperCase()} · ${difficultyLabel}`;
 
   const forecast = useMemo(() => {
-    if (!selected || battle.mode !== "act" || !hoverUnit || hoverUnit.team !== "enemy") return null;
+    if (!selected || battle.mode !== "command" || !hoverUnit || hoverUnit.team !== "enemy") return null;
     if (!battle.attackTiles.some(([ax, ay]) => ax === hoverUnit.x && ay === hoverUnit.y)) return null;
-    const dmg = calcDamage(selected, hoverUnit, fatigue, battle.markedId, false, doctrines, battle.map);
+    const dmg = calcDamage(selected, hoverUnit, fatigue, battle.markedId, false, doctrines, battle.map, battle.levelId);
     return { dmg, target: hoverUnit };
   }, [selected, battle.mode, battle.attackTiles, battle.markedId, hoverUnit, fatigue, doctrines]);
+
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState<[number, number] | null>(null);
+  const boardRef = useRef<HTMLDivElement>(null);
+  const dragMoved = useRef(false);
+
+  const tileFromPoint = (clientX: number, clientY: number): [number, number] | null => {
+    const board = boardRef.current;
+    if (!board) return null;
+    const rect = board.getBoundingClientRect();
+    const relX = clientX - rect.left;
+    const relY = clientY - rect.top;
+    if (relX < 0 || relY < 0 || relX >= rect.width || relY >= rect.height) return null;
+    const tx = Math.min(SIM_W - 1, Math.max(0, Math.floor((relX / rect.width) * SIM_W)));
+    const ty = Math.min(SIM_H - 1, Math.max(0, Math.floor((relY / rect.height) * SIM_H)));
+    return [tx, ty];
+  };
 
   const [useOllama, setUseOllama] = useState(() => getOllamaEnabled());
   const [ollamaReady, setOllamaReady] = useState(false);
@@ -83,7 +111,11 @@ export function SimScreen() {
   const enemyBusy = useRef(false);
   const finishSent = useRef(false);
 
-  useEffect(() => { ensureAudio(); }, []);
+  useEffect(() => {
+    ensureAudio();
+    setMusicTrack("battle");
+    return () => setMusicTrack("hub");
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -191,7 +223,42 @@ export function SimScreen() {
   return (
     <div className="simfe">
       <div className="simfe-stage">
-        <div className="simfe-board">
+        <div
+          className={`simfe-board${draggingId ? " is-dragging" : ""}`}
+          ref={boardRef}
+          onPointerMove={(e) => {
+            if (!draggingId) return;
+            const tile = tileFromPoint(e.clientX, e.clientY);
+            if (tile) {
+              dragMoved.current = true;
+              setDragOver(tile);
+              setCursor(tile);
+            }
+          }}
+          onPointerUp={(e) => {
+            if (!draggingId) return;
+            const tile = tileFromPoint(e.clientX, e.clientY) ?? dragOver;
+            if (tile && dragMoved.current) {
+              setBattle((b) => {
+                const before = b.units.find((u) => u.id === draggingId);
+                const next = dropUnit(b, draggingId, tile[0], tile[1]);
+                const after = next.units.find((u) => u.id === draggingId);
+                if (before && after && (before.x !== after.x || before.y !== after.y)) sfxDrop();
+                return next;
+              });
+            }
+            setDraggingId(null);
+            setDragOver(null);
+            window.setTimeout(() => {
+              dragMoved.current = false;
+            }, 0);
+          }}
+          onPointerCancel={() => {
+            setDraggingId(null);
+            setDragOver(null);
+            dragMoved.current = false;
+          }}
+        >
           {Array.from({ length: SIM_H * SIM_W }, (_, i) => {
             const x = i % SIM_W;
             const y = Math.floor(i / SIM_W);
@@ -201,6 +268,16 @@ export function SimScreen() {
             const atk = battle.attackTiles.some(([ax, ay]) => ax === x && ay === y);
             const u = unitAt(battle, x, y);
             const blocked = [3, 4, 5].includes(battle.map[y][x]);
+            const dropHere =
+              draggingId &&
+              dragOver &&
+              dragOver[0] === x &&
+              dragOver[1] === y;
+            const canDrop =
+              dropHere &&
+              (battle.phase === "deploy"
+                ? deploySpot
+                : move || (u?.id === draggingId));
             return (
               <button
                 key={`${x}-${y}`}
@@ -212,13 +289,56 @@ export function SimScreen() {
                   atk ? "atk" : "",
                   blocked ? "blocked" : "",
                   cursor && cursor[0] === x && cursor[1] === y ? "cursor" : "",
+                  dropHere ? (canDrop ? "drop-ok" : "drop-bad") : "",
+                  u && draggingId === u.id ? "dragging-src" : "",
                 ]
                   .filter(Boolean)
                   .join(" ")}
                 style={{ backgroundImage: `url(${tileImage(battle.map, x, y)})` }}
                 onMouseEnter={() => setCursor([x, y])}
                 onFocus={() => setCursor([x, y])}
-                onClick={() => setBattle((b) => clickTile(b, x, y, fatigue, doctrines))}
+                onPointerEnter={() => {
+                  /* drag tracking via board pointermove */
+                }}
+                onPointerDown={(e) => {
+                  if (battle.phase === "enemy" || battle.phase === "win" || battle.phase === "lose") return;
+                  const cellUnit = unitAt(battle, x, y);
+                  const startDrag = (id: string) => {
+                    e.preventDefault();
+                    dragMoved.current = false;
+                    boardRef.current?.setPointerCapture?.(e.pointerId);
+                    setDraggingId(id);
+                    setDragOver([x, y]);
+                  };
+                  if (battle.phase === "deploy" && cellUnit?.team === "ally") {
+                    setBattle((b) => ({
+                      ...b,
+                      selected: cellUnit.id,
+                      mode: "place",
+                      moveTiles: [...b.deploy],
+                      log: `Drag ${cellUnit.name} onto a blue deploy tile.`,
+                    }));
+                    startDrag(cellUnit.id);
+                    return;
+                  }
+                  if (battle.phase === "player" && cellUnit?.team === "ally" && !cellUnit.acted) {
+                    setBattle((b) => beginCommand(b, cellUnit.id));
+                    startDrag(cellUnit.id);
+                    return;
+                  }
+                  if (
+                    battle.phase === "player" &&
+                    battle.mode === "command" &&
+                    cellUnit &&
+                    cellUnit.id === battle.selected
+                  ) {
+                    startDrag(cellUnit.id);
+                  }
+                }}
+                onClick={() => {
+                  if (draggingId || dragMoved.current) return;
+                  setBattle((b) => clickTile(b, x, y, fatigue, doctrines));
+                }}
               >
                 {u && (
                   <div
@@ -229,6 +349,7 @@ export function SimScreen() {
                       battle.selected === u.id ? "selected" : "",
                       battle.markedId === u.id ? "marked" : "",
                       battle.tauntId === u.id ? "taunt" : "",
+                      draggingId === u.id ? "ghost" : "",
                     ]
                       .filter(Boolean)
                       .join(" ")}
@@ -236,7 +357,7 @@ export function SimScreen() {
                     <span className="simfe-class" aria-hidden>
                       {CLASS_ICON[u.cls]}
                     </span>
-                    <img src={ASSET.simUnit(u.team, u.sprite)} alt={u.name} />
+                    <img src={ASSET.simUnit(u.team, u.sprite)} alt={u.name} draggable={false} />
                     <div className={`simfe-hpbar ${u.team}`}>
                       <span style={{ width: `${(u.hp / u.maxHp) * 100}%` }} />
                     </div>
@@ -408,7 +529,7 @@ export function SimScreen() {
             </>
           )}
 
-          {battle.phase === "player" && battle.mode === "act" && selected && (
+          {battle.phase === "player" && battle.mode === "command" && selected && (
             <>
               {!selected.sigUsed && selected.who && (
                 <button
@@ -435,6 +556,7 @@ export function SimScreen() {
                       mode: "select" as const,
                       moveTiles: [],
                       attackTiles: [],
+                      movedFrom: null,
                     };
                     return finishUnit(trySupport(next, acted, doctrines), acted);
                   })
@@ -476,8 +598,8 @@ export function SimScreen() {
           <div className="sim-overlay-card">
             <h2>Combat Basics</h2>
             <ol>
-              <li>Deploy all five on blue tiles, then Begin.</li>
-              <li>Select → move (blue) → attack red tiles or use a signature.</li>
+              <li>Deploy all five on blue tiles (drag or tap), then Begin.</li>
+              <li>Drag a mech within blue tiles freely. Attack red tiles, use a signature, or Wait to finish.</li>
               <li>Rubble grants DEF. Fatigue softens your hits and worsens theirs.</li>
               <li>Academy AI is default; enable Ollama for LLM OpFor.</li>
             </ol>
@@ -534,6 +656,88 @@ function finishUnit(battle: SimBattle, _u: SimUnit): SimBattle {
   return { ...battle, selected: null, mode: "select", moveTiles: [], attackTiles: [], movedFrom: null };
 }
 
+/** Move tiles measured from turn-start origin so you can freely re-park within range. */
+function moveRangeFromOrigin(
+  battle: SimBattle,
+  unit: SimUnit,
+  origin: [number, number],
+): [number, number][] {
+  const ghostBattle: SimBattle = {
+    ...battle,
+    units: battle.units.map((u) =>
+      u.id === unit.id ? { ...u, x: origin[0], y: origin[1] } : u,
+    ),
+  };
+  const ghost = ghostBattle.units.find((u) => u.id === unit.id)!;
+  return bfsMove(ghostBattle, ghost);
+}
+
+function beginCommand(battle: SimBattle, unitId: string): SimBattle {
+  const b: SimBattle = { ...battle, units: battle.units.map((u) => ({ ...u })) };
+  const u = b.units.find((x) => x.id === unitId);
+  if (!u || u.team !== "ally" || u.acted || u.x == null || u.y == null) return battle;
+  const origin: [number, number] =
+    b.selected === u.id && b.movedFrom && b.mode === "command"
+      ? b.movedFrom
+      : [u.x, u.y];
+  const moves = moveRangeFromOrigin(b, u, origin);
+  return {
+    ...b,
+    selected: u.id,
+    mode: "command",
+    moveTiles: moves,
+    attackTiles: attackTiles(u, u.x, u.y),
+    movedFrom: origin,
+    log: `Drag ${u.name} on blue tiles, then attack / Wait.`,
+  };
+}
+
+function dropUnit(battle: SimBattle, unitId: string, x: number, y: number): SimBattle {
+  const b: SimBattle = { ...battle, units: battle.units.map((u) => ({ ...u })) };
+  const u = b.units.find((x) => x.id === unitId);
+  if (!u || u.team !== "ally") return battle;
+
+  if (b.phase === "deploy") {
+    if (!b.deploy.some(([dx, dy]) => dx === x && dy === y)) {
+      return { ...b, log: "Deploy only on highlighted tiles." };
+    }
+    const occ = unitAt(b, x, y);
+    if (occ && occ.id !== u.id) return { ...b, log: "Tile occupied." };
+    u.x = x;
+    u.y = y;
+    const left = b.units.filter((a) => a.team === "ally" && a.x == null);
+    return {
+      ...b,
+      selected: left[0]?.id ?? u.id,
+      mode: "place",
+      moveTiles: left[0] ? [...b.deploy] : [],
+      log: left[0]
+        ? `${u.name} deployed. Drag ${left[0].name} next.`
+        : "All placed. Press Begin Battle.",
+    };
+  }
+
+  if (b.phase !== "player") return battle;
+  const origin = b.movedFrom ?? ([u.x!, u.y!] as [number, number]);
+  const moves = moveRangeFromOrigin(b, u, origin);
+  if (!moves.some(([mx, my]) => mx === x && my === y)) {
+    return { ...b, log: "Out of move range — drop on a blue tile." };
+  }
+  const occ = unitAt(b, x, y);
+  if (occ && occ.id !== u.id) return { ...b, log: "Tile occupied." };
+  u.x = x;
+  u.y = y;
+  return {
+    ...b,
+    selected: u.id,
+    mode: "command",
+    moveTiles: moves,
+    attackTiles: attackTiles(u, x, y),
+    movedFrom: origin,
+    log: `${u.name} at (${x},${y}) — drag again, attack red, or Wait.`,
+  };
+}
+
 function clickTile(
   battle: SimBattle,
   x: number,
@@ -545,7 +749,7 @@ function clickTile(
   if (b.phase === "deploy") {
     const u = b.units.find((x) => x.id === b.selected);
     if (!u || u.team !== "ally") return b;
-    if (!battle.deploy.some(([dx, dy]) => dx === x && dy === y)) {
+    if (!b.deploy.some(([dx, dy]) => dx === x && dy === y)) {
       return { ...b, log: "Deploy only on highlighted tiles." };
     }
     if (unitAt(b, x, y) && unitAt(b, x, y)!.id !== u.id) return { ...b, log: "Tile occupied." };
@@ -555,51 +759,40 @@ function clickTile(
     return {
       ...b,
       selected: left[0]?.id ?? null,
-      moveTiles: left[0] ? [...battle.deploy] : [],
+      moveTiles: left[0] ? [...b.deploy] : [],
       log: left[0] ? `${u.name} deployed. Place ${left[0].name}.` : "All placed. Press Begin Battle.",
     };
   }
   if (b.phase !== "player") return b;
-  if (b.mode === "select") {
-    const u = unitAt(b, x, y);
-    if (u && u.team === "ally" && !u.acted) {
-      return {
-        ...b,
-        selected: u.id,
-        mode: "move",
-        moveTiles: bfsMove(b, u),
-        attackTiles: [],
-        movedFrom: [u.x!, u.y!],
-        log: `Move ${u.name}.`,
-      };
+
+  // Tap ally to start/command; tap empty blue to reposition; tap enemy to attack
+  if (b.mode === "select" || b.mode === "command") {
+    const cellUnit = unitAt(b, x, y);
+    if (cellUnit?.team === "ally" && !cellUnit.acted) {
+      return beginCommand(b, cellUnit.id);
     }
-    return b;
-  }
-  if (b.mode === "move") {
-    const u = b.units.find((x) => x.id === b.selected);
-    if (!u || !b.moveTiles.some(([mx, my]) => mx === x && my === y)) return b;
-    u.x = x;
-    u.y = y;
-    return {
-      ...b,
-      mode: "act",
-      moveTiles: [],
-      attackTiles: attackTiles(u, x, y),
-      log: `${u.name} ready — attack a red tile, use a signature, or Wait.`,
-    };
-  }
-  if (b.mode === "act") {
-    const u = b.units.find((x) => x.id === b.selected);
-    if (!u) return b;
-    const target = unitAt(b, x, y);
-    if (target?.team === "enemy" && b.attackTiles.some(([ax, ay]) => ax === x && ay === y)) {
-      const dmg = calcDamage(u, target, fatigue, b.markedId, false, doctrines, b.map);
-      target.hp = Math.max(0, target.hp - dmg);
-      u.acted = true;
-      let next: SimBattle = { ...b, log: `${u.name} hits ${target.name} — ${dmg}.` };
-      if (b.markedId === target.id) next = { ...next, markedId: null };
-      next = trySupport(next, u, doctrines);
-      return finishUnit(next, u);
+    if (b.mode === "command" && b.selected) {
+      const u = b.units.find((x) => x.id === b.selected);
+      if (!u) return b;
+      if (cellUnit?.team === "enemy" && b.attackTiles.some(([ax, ay]) => ax === x && ay === y)) {
+        const dmg = calcDamage(u, cellUnit, fatigue, b.markedId, false, doctrines, b.map, b.levelId);
+        cellUnit.hp = Math.max(0, cellUnit.hp - dmg);
+        u.acted = true;
+        let next: SimBattle = {
+          ...b,
+          moveTiles: [],
+          attackTiles: [],
+          movedFrom: null,
+          log: `${u.name} hits ${cellUnit.name} — ${dmg}.`,
+        };
+        if (b.markedId === cellUnit.id) next = { ...next, markedId: null };
+        next = trySupport(next, u, doctrines);
+        return finishUnit(next, u);
+      }
+      // Tap blue tile to hop without drag
+      if (b.moveTiles.some(([mx, my]) => mx === x && my === y)) {
+        return dropUnit(b, u.id, x, y);
+      }
     }
   }
   return b;
@@ -639,7 +832,7 @@ function useSignature(
 ): SimBattle {
   const b: SimBattle = { ...battle, units: battle.units.map((u) => ({ ...u })) };
   const u = b.units.find((x) => x.id === b.selected);
-  if (!u || u.sigUsed || b.mode !== "act") return battle;
+  if (!u || u.sigUsed || b.mode !== "command") return battle;
   const who = u.who;
   if (who === "yuki") {
     u.sigUsed = true;
@@ -694,7 +887,7 @@ function useSignature(
   targets.sort((a, c) => a.hp - c.hp);
   const tgt = targets[0];
   if (who === "naomi") b.markedId = tgt.id;
-  const dmg = calcDamage(u, tgt, fatigue, b.markedId, who === "emi", doctrines, b.map);
+  const dmg = calcDamage(u, tgt, fatigue, b.markedId, who === "emi", doctrines, b.map, b.levelId);
   tgt.hp = Math.max(0, tgt.hp - dmg);
   u.sigUsed = true;
   u.acted = true;
