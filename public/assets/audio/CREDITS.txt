@@ -1,0 +1,24 @@
+Audio credits — all free for game use
+
+MUSIC
+-----
+hub.ogg — "Sci-Fi Machines At Work" by Joe Reynolds (professorlamp)
+  https://opengameart.org/content/sci-fi-machines-at-work
+  Attribution appreciated: joereynoldsaudio.com
+
+hangar-hum.ogg — "Sci-Fi Background noise" by Spring
+  https://opengameart.org/content/sci-fi-background-noise
+  License: CC0
+
+battle.ogg — "Robotic City" by section31
+  https://opengameart.org/content/robotic-city
+  License: CC0 (public domain dedication)
+
+SFX
+---
+click.wav, confirm.wav, drop.wav, win.wav, lose.wav
+  Kenney.nl — Interface Sounds (CC0)
+  https://kenney.nl/assets/interface-sounds
+
+hit.ogg — explosion sample from OpenGameArt CC0 collection
+ui-blip.ogg — click sample from OpenGameArt CC0 collection

@@ -1,3 +1,5 @@
+import { useEffect } from "react";
+import { ensureAudio, setAudioMuted, setMusicTrack, stopAmbient } from "./game/audio";
 import { StatusRail, TopBar } from "./components/Shell";
 import { BriefingScreen } from "./screens/BriefingScreen";
 import { DevelopScreen, DoctrineScreen } from "./screens/DevelopScreen";
@@ -9,8 +11,6 @@ import { SimScreen } from "./screens/SimScreen";
 import { TitleScreen } from "./screens/TitleScreen";
 import { TrainingScreen } from "./screens/TrainingScreen";
 import { useGame } from "./game/store";
-import { useEffect } from "react";
-import { ensureAudio, setAudioMuted, stopAmbient } from "./game/audio";
 
 export default function App() {
   const screen = useGame((s) => s.screen);
@@ -22,11 +22,21 @@ export default function App() {
   useEffect(() => {
     setAudioMuted(audioMuted);
     if (audioMuted) stopAmbient();
-    else ensureAudio();
   }, [audioMuted]);
 
+  useEffect(() => {
+    if (audioMuted) return;
+    if (screen === "sim") setMusicTrack("battle");
+    else setMusicTrack("hub");
+  }, [screen, audioMuted]);
+
   return (
-    <div className="game">
+    <div
+      className="game"
+      onPointerDown={() => {
+        ensureAudio();
+      }}
+    >
       {showChrome && <TopBar />}
       <StatusRail />
       <main className={`main${bleed ? " main-bleed" : ""}`}>

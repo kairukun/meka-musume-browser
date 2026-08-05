@@ -672,7 +672,42 @@ img {
 }
 
 .sim-level-main strong {
-  font-size: 15px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.diff-pill {
+  display: inline-block;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  font-weight: 700;
+}
+
+.diff-very_easy {
+  color: #9fe8c0;
+  border-color: #3a7a55;
+  background: #143024;
+}
+.diff-easy {
+  color: #b8e0ff;
+  border-color: #3a6a90;
+  background: #142430;
+}
+.diff-medium {
+  color: #ffe1a0;
+  border-color: #8a6a30;
+  background: #2a2414;
+}
+.diff-hard {
+  color: #ffb0b0;
+  border-color: #8a4040;
+  background: #2a1418;
 }
 
 .sim-level-str {
@@ -938,6 +973,29 @@ img {
 .simfe-cell.atk::after {
   background: #e0404066;
   box-shadow: inset 0 0 0 1px #ff8a8a;
+}
+
+.simfe-board.is-dragging {
+  touch-action: none;
+  user-select: none;
+  cursor: grabbing;
+}
+
+.simfe-cell.drop-ok::after {
+  background: #3dff8a55 !important;
+  box-shadow: inset 0 0 0 2px #7dffb0;
+}
+
+.simfe-cell.drop-bad::after {
+  background: #ff3a3a44 !important;
+}
+
+.simfe-cell.dragging-src .simfe-unit.ghost {
+  opacity: 0.35;
+}
+
+.simfe-unit.selected {
+  cursor: grab;
 }
 
 .simfe-cell.cursor::before {

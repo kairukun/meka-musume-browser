@@ -1,4 +1,5 @@
 import { AFFINITY_MAX, BOND_THRESHOLDS, CREW, PILOT_IDS } from "./crew";
+import { simLevelDef } from "./simLevels";
 import type { CrewId, PilotId, SimLevelId } from "./types";
 
 export function clamp(n: number, lo: number, hi: number) {
@@ -53,16 +54,11 @@ export function opposingSquadStrength(
   ours: number,
   mode: "match" | SimLevelId | "sim" = "match",
 ) {
-  const offsets: Record<string, number> = {
-    match: 0,
-    sim: 9,
-    sim_01: -2,
-    sim_02: 4,
-    sim_03: 9,
-    sim_04: 15,
-  };
-  const offset = offsets[mode] ?? 0;
-  return clamp(ours + offset, 1, 99);
+  if (mode === "match") return clamp(ours, 1, 99);
+  // Legacy alias → Hard-ish
+  if (mode === "sim") return clamp(ours + 10, 1, 99);
+  const def = simLevelDef(mode);
+  return clamp(ours + def.opforOffset, 1, 99);
 }
 
 export function strScaleFactor(strVal: number) {
