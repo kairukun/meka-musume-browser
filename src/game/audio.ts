@@ -1,13 +1,16 @@
 /**
  * Audio — file-based BGM + SFX (CC0 / free game assets).
  * See public/assets/audio/CREDITS.txt for sources.
+ *
+ * Hub uses quiet hangar ambience only (no melodic bed — that was disorienting).
+ * Battle uses a separate combat loop.
  */
 
 const BASE = import.meta.env.BASE_URL;
 
 const MUSIC = {
-  hub: `${BASE}assets/audio/music/hub.ogg`,
-  hangar: `${BASE}assets/audio/music/hangar-hum.ogg`,
+  /** Soft hangar room tone for hub / menus */
+  hub: `${BASE}assets/audio/music/hangar-hum.ogg`,
   battle: `${BASE}assets/audio/music/battle.ogg`,
 } as const;
 
@@ -26,7 +29,6 @@ let muted = false;
 let unlocked = false;
 let currentTrack: MusicTrack = "none";
 let musicEl: HTMLAudioElement | null = null;
-let humEl: HTMLAudioElement | null = null;
 const sfxCache = new Map<string, HTMLAudioElement>();
 
 function makeAudio(src: string, loop: boolean, volume: number): HTMLAudioElement {
@@ -38,8 +40,7 @@ function makeAudio(src: string, loop: boolean, volume: number): HTMLAudioElement
 }
 
 function ensureEls() {
-  if (!musicEl) musicEl = makeAudio(MUSIC.hub, true, 0.26);
-  if (!humEl) humEl = makeAudio(MUSIC.hangar, true, 0.1);
+  if (!musicEl) musicEl = makeAudio(MUSIC.hub, true, 0.12);
 }
 
 async function tryPlay(el: HTMLAudioElement | null) {
@@ -55,10 +56,8 @@ export function setAudioMuted(on: boolean) {
   muted = on;
   if (on) {
     musicEl?.pause();
-    humEl?.pause();
   } else if (unlocked && currentTrack !== "none") {
     void tryPlay(musicEl);
-    if (currentTrack === "hub") void tryPlay(humEl);
   }
 }
 
@@ -72,7 +71,6 @@ export function unlockAudio() {
   ensureEls();
   if (!muted && currentTrack !== "none") {
     void tryPlay(musicEl);
-    if (currentTrack === "hub") void tryPlay(humEl);
   }
 }
 
@@ -83,33 +81,22 @@ export function setMusicTrack(track: MusicTrack) {
   if (track === "none") {
     currentTrack = "none";
     musicEl.pause();
-    humEl?.pause();
     return;
   }
 
-  const nextSrc = track === "battle" ? MUSIC.battle : MUSIC.hub;
-  const nextFile = track === "battle" ? "battle.ogg" : "hub.ogg";
+  const nextSrc = MUSIC[track];
+  const nextFile = track === "battle" ? "battle.ogg" : "hangar-hum.ogg";
   const switched = !musicEl.src.includes(nextFile);
 
   currentTrack = track;
   if (switched) {
-    const t = musicEl.currentTime;
     musicEl.src = nextSrc;
     musicEl.loop = true;
     musicEl.load();
-    // don't restore time across different tracks
-    void t;
   }
-  musicEl.volume = track === "battle" ? 0.3 : 0.24;
 
-  if (track === "hub") {
-    if (humEl) {
-      humEl.volume = 0.09;
-      void tryPlay(humEl);
-    }
-  } else {
-    humEl?.pause();
-  }
+  // Hub ambience stays quiet; battle can sit a bit louder.
+  musicEl.volume = track === "battle" ? 0.28 : 0.11;
 
   void tryPlay(musicEl);
 }
@@ -146,12 +133,11 @@ export function sfxLose() {
 }
 
 export function startAmbient() {
-  setMusicTrack(currentTrack === "none" || currentTrack === "hangar" ? "hub" : currentTrack);
+  setMusicTrack(currentTrack === "none" ? "hub" : currentTrack);
 }
 
 export function stopAmbient() {
   musicEl?.pause();
-  humEl?.pause();
 }
 
 export function ensureAudio() {
