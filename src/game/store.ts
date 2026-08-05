@@ -187,6 +187,16 @@ function migrateSimCleared(raw: Record<string, unknown> | undefined): Record<Sim
   };
 }
 
+/** Coastal Alert unlocks once Sim 03 is cleared (flag or cleared map — for older saves). */
+function coastalAlertPending(st: {
+  coastalAlertSeen: boolean;
+  coastalAlertReady: boolean;
+  simCleared: Record<SimLevelId, boolean>;
+}) {
+  if (st.coastalAlertSeen) return false;
+  return st.coastalAlertReady || !!st.simCleared.sim_03;
+}
+
 export const useGame = create<GameState>()(
   persist(
     (set, get) => ({
@@ -348,7 +358,7 @@ export const useGame = create<GameState>()(
         }
         if (id === "coastal") {
           if (st.coastalAlertSeen) return "done";
-          return st.coastalAlertReady ? "open" : "locked";
+          return coastalAlertPending(st) ? "open" : "locked";
         }
         return "locked";
       },
@@ -359,7 +369,7 @@ export const useGame = create<GameState>()(
         if (pending) {
           return `Bond Rank ${pending.rank} scene queued for ${CREW[pending.who].short} — opening next.`;
         }
-        if (st.coastalAlertReady && !st.coastalAlertSeen) {
+        if (coastalAlertPending(st)) {
           return "Next: Coastal alert — Priority feed waiting.";
         }
         if (
@@ -405,7 +415,8 @@ export const useGame = create<GameState>()(
           get().startStory("hub_loss");
           return;
         }
-        if (st.coastalAlertReady && !st.coastalAlertSeen) {
+        if (coastalAlertPending(st)) {
+          if (!st.coastalAlertReady) set({ coastalAlertReady: true });
           get().startStory("coastal");
           return;
         }
@@ -464,7 +475,10 @@ export const useGame = create<GameState>()(
             cohesion: clamp(st.cohesion + cohesionGain, 0, COHESION_MAX),
             lastSimWon: true,
             gallerySeen: { ...st.gallerySeen, [`sim_${id}`]: true },
-            ...(id === "sim_03" && !st.coastalAlertSeen ? { coastalAlertReady: true } : {}),
+            ...(!st.coastalAlertSeen &&
+            (id === "sim_03" || id === "sim_04" || st.simCleared.sim_03)
+              ? { coastalAlertReady: true }
+              : {}),
           }));
           get().addIntelligence(3);
           get().addFatigue(get().facilities.medbay ? 4 : 6);
@@ -612,12 +626,20 @@ export const useGame = create<GameState>()(
     }),
     {
       name: "meka-musume-save",
-      version: 4,
-      migrate: (persisted) => {
+      version: 5,
+      migrate: (persisted, fromVersion) => {
         const p = (persisted ?? {}) as Record<string, unknown>;
+        const simCleared = migrateSimCleared(p);
+        const coastalAlertSeen = !!p.coastalAlertSeen;
+        // Older saves cleared Sim 03 without setting the ready flag.
+        const coastalAlertReady =
+          !!p.coastalAlertReady || (!coastalAlertSeen && !!simCleared.sim_03);
+        void fromVersion;
         return {
           ...p,
-          simCleared: migrateSimCleared(p),
+          simCleared,
+          coastalAlertReady,
+          coastalAlertSeen,
           activeSim: (p.activeSim as SimLevelId) || "sim_01",
           simCredits: typeof p.simCredits === "number" ? p.simCredits : 0,
           frameTuning: (p.frameTuning as Record<FrameClass, number>) || emptyFrameTuning(),

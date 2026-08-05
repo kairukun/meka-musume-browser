@@ -19,14 +19,9 @@ export function HubScreen() {
   const [outingOpen, setOutingOpen] = useState(false);
 
   useEffect(() => {
-    const st = useGame.getState();
-    if (st.coastalAlertReady && !st.coastalAlertSeen) {
-      startStory("coastal");
-      return;
-    }
-    const pending = st.pendingBond();
-    if (pending) startStory(`bond_${pending.who}_${pending.rank}`);
-  }, [startStory]);
+    // Prefer store priority so older saves (Sim 03 cleared, flag never set) still fire.
+    useGame.getState().openHubWithPriority();
+  }, []);
 
   const lectureSt = missionStatus("lecture_01");
 
